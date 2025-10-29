@@ -22,10 +22,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-#Venv
-venv/
-__pycache__/
-*.pyc
-db.sqlite3
-
