@@ -1,4 +1,5 @@
 
+ 
 export enum AgeGroup {
   KID = 'Niño (6-9 años)',
   TWEEN = 'Preadolescente (10-12 años)',
@@ -25,16 +26,26 @@ export interface AvatarCustomization {
 }
 
 export interface User {
-  name: string;
-  ageGroup: AgeGroup;
+  // 🔹 Campos del backend Django
+  id?: number;
+  username?: string;   // <-- El nombre de usuario del backend
+  email?: string;      // <-- Correo si existe
+  role?: string;       // <-- "student" | "parent" | "teacher"
+  linked_parent?: string | null; // <-- Apoderado vinculado, si aplica
+
+  // 🔹 Campos locales (para compatibilidad con MOCK_DB)
+  name?: string;
+  ageGroup?: AgeGroup;
   xp: number;
+  isPremium: boolean;
+
+  // 🔹 Campos relacionados con el progreso y personalización
   avatarCustomization: AvatarCustomization;
   completedLessons: Set<string>;
   performance: { [lessonId: string]: Performance };
   badges: string[];
   weeklyMissionProgress: { [missionId: string]: number };
   gameState: { [gameId: string]: any };
-  isPremium: boolean;
 }
 
 export interface Account {
@@ -110,10 +121,10 @@ export interface AppContextType {
   user: User | null;
   loggedInAccount: Account | null;
   linkedStudent: User | null;
-  login: (email: string, password: string) => boolean;
+  login: (email: string, password: string) => Promise<boolean>; // 🔹 Cambiado
   loginStudent: (name: string) => boolean;
   logout: () => void;
-  register: (name: string, age: number, email: string, password: string, profileType: 'parent' | 'school') => boolean;
+  register: (name: string, age: number, email: string, password: string, profileType: 'parent' | 'school') => Promise<boolean>; // 🔹 Cambiado
   registerStudent: (name: string, ageGroup: AgeGroup) => boolean;
   completeLesson: (lesson: Lesson, performance: Performance) => void;
   updateUser: (updatedUser: User) => void;
@@ -123,6 +134,7 @@ export interface AppContextType {
   closePremiumModal: () => void;
   upgradeToPremium: () => void;
 }
+
 
 export interface Classroom {
     id: string;
