@@ -118,7 +118,7 @@ const AdultLoginForm: React.FC<{ profileType: 'parent' | 'school' }> = ({ profil
         <AuthInput
           id="username"
           type="text"
-          label="Nombre de Usuario o Correo"
+          label="Nombre de Usuario"
           value={username}
           onChange={setUsername}
           required
