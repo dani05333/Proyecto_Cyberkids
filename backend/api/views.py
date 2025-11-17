@@ -32,10 +32,11 @@ class RegisterView(generics.CreateAPIView):
 
 # ✅ Login con username o email
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Permite iniciar sesión con email o username."""
+    """Permite iniciar sesión con email o username y validar el rol esperado."""
     def validate(self, attrs):
         username_or_email = attrs.get("username")
         password = attrs.get("password")
+        expected_role = self.context['request'].data.get("expected_role")  # 👈 Nuevo parámetro
 
         # Si escribió email, obtener username
         try:
@@ -50,10 +51,17 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
         if not user.is_active:
             raise serializers.ValidationError("Esta cuenta está inactiva.")
 
+        # 🚫 Validar tipo de rol
+        if expected_role and user.role != expected_role:
+            raise serializers.ValidationError(
+                f"Este usuario no tiene permisos para ingresar como {expected_role}."
+            )
+
         data = super().validate(attrs)
         data["username"] = user.username
         data["role"] = user.role
         return data
+
 
 class EmailTokenObtainPairView(TokenObtainPairView):
     serializer_class = EmailTokenObtainPairSerializer
@@ -68,10 +76,14 @@ def get_student_by_username(request, username):
             "id": student.id,
             "username": student.username,
             "email": student.email,
-            "linked_parent": student.linked_student.username if student.linked_student else None
+            "linked_parent": student.linked_student.username if student.linked_student else None,
+            "age_group": student.age_group,  # 👈 ESTE CAMPO ES CLAVE
+            "age": student.age,  # 👈 También inclúyelo para verificar que llega
         })
     except CustomUser.DoesNotExist:
         return Response({"error": "Estudiante no encontrado"}, status=404)
+
+
 
 
 # ✅ Crear hijo vinculado
@@ -112,3 +124,25 @@ def create_child(request):
         return Response({"error": "Apoderado no encontrado."}, status=404)
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+
+@api_view(['POST'])
+def set_student_age_group(request):
+    username = request.data.get("username")
+    age_group = request.data.get("age_group")
+
+    if not username or not age_group:
+        return Response({"error": "Faltan campos requeridos."}, status=400)
+
+    try:
+        student = CustomUser.objects.get(username=username, role="student")
+        student.age_group = age_group
+        student.save()
+
+        return Response({
+            "message": "Edad actualizada correctamente",
+            "age_group": student.age_group,
+        })
+    except CustomUser.DoesNotExist:
+        return Response({"error": "Estudiante no encontrado"}, status=404)
+
+

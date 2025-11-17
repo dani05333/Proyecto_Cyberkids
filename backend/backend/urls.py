@@ -16,7 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from api.views import RegisterView, EmailTokenObtainPairView, get_student_by_username, create_child
+from api.views import RegisterView, EmailTokenObtainPairView, get_student_by_username, create_child, set_student_age_group
 
 
 urlpatterns = [
@@ -25,7 +25,6 @@ urlpatterns = [
     path('api/login/', EmailTokenObtainPairView.as_view(), name='login'),
     path('api/student/<str:username>/', get_student_by_username, name='get_student'),
     path('api/create_child/', create_child, name='create_child'),
-
-
+    path('api/student/set-age-group', set_student_age_group, name='set_student_age_group'),
 ]
 
