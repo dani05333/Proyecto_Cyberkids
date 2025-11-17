@@ -286,6 +286,9 @@ const LEARNING_PATHS: { [key in AgeGroup]: LearningPath } = {
   },
 };
 
-export const getLearningPathForAgeGroup = (ageGroup: AgeGroup): LearningPath => {
-  return LEARNING_PATHS[ageGroup];
+export const getLearningPathForAgeGroup = (ageGroup?: string) => {
+  // Si existe una ruta para el grupo, la devuelve. Si no, usa la de niños como fallback.
+  return LEARNING_PATHS[ageGroup as AgeGroup] || LEARNING_PATHS[AgeGroup.KID];
 };
+
+

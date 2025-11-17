@@ -1,10 +1,11 @@
 
  
 export enum AgeGroup {
-  KID = 'Niño (6-9 años)',
-  TWEEN = 'Preadolescente (10-12 años)',
-  TEEN = 'Adolescente (13-16 años)',
+  KID = 'KID',
+  TWEEN = 'TWEEN',
+  TEEN = 'TEEN',
 }
+
 
 export enum ProfileType {
   STUDENT = 'student',
@@ -121,10 +122,16 @@ export interface AppContextType {
   user: User | null;
   loggedInAccount: Account | null;
   linkedStudent: User | null;
-  login: (email: string, password: string) => Promise<boolean>; // 🔹 Cambiado
+  login: (emailOrUsername: string, password: string, role?: string) => Promise<boolean>;
   loginStudent: (name: string) => boolean;
   logout: () => void;
-  register: (name: string, age: number, email: string, password: string, profileType: 'parent' | 'school') => Promise<boolean>; // 🔹 Cambiado
+register: (
+  name: string,
+  age: number,
+  email: string,
+  password: string,
+  role: string
+) => Promise<boolean>;
   registerStudent: (name: string, ageGroup: AgeGroup) => boolean;
   completeLesson: (lesson: Lesson, performance: Performance) => void;
   updateUser: (updatedUser: User) => void;

@@ -1,44 +1,65 @@
-import React, { useState, createContext, useEffect } from 'react';
-import { AppContextType, User, Lesson, Performance, Account, ProfileType } from './types';
-import Login from './components/Login';
-import Dashboard from './components/Dashboard';
-import AgeSelector from './components/AgeSelector';
-import ParentDashboard from './components/ParentDashboard';
-import SchoolDashboard from './components/SchoolDashboard';
-import FeedbackButton from './components/FeedbackButton';
-import PremiumModal from './components/PremiumModal';
-import axios from 'axios';
-import ParentHome from './components/ParentHome';
+import React, { useState, createContext, useEffect } from "react";
+import axios from "axios";
 
+import {
+  AppContextType,
+  User,
+  Lesson,
+  Performance,
+  Account,
+  ProfileType,
+} from "./types";
 
+import Login from "./components/Login";
+import Dashboard from "./components/Dashboard";
+import ParentDashboard from "./components/ParentDashboard";
+import SchoolDashboard from "./components/SchoolDashboard";
+import ParentHome from "./components/ParentHome";
+import FeedbackButton from "./components/FeedbackButton";
+import PremiumModal from "./components/PremiumModal";
+import AgeSelectorPage from "./components/AgeSelectorPage";
 
-// 🧩 Creamos el contexto
+// ------------------------------
+// CONTEXTO GLOBAL
+// ------------------------------
 export const AppContext = createContext<AppContextType | null>(null);
 
-// (Opcional) Base de datos temporal mientras conectas todo el backend
+// Base temporal (necesaria para cumplir AppContextType)
 const MOCK_DB = {
   users: new Map<string, User>(),
-  accounts: new Map<string, { password: string; account: Account }>(),
 };
 
+// ------------------------------
+// COMPONENTE PRINCIPAL
+// ------------------------------
 const App: React.FC = () => {
-  const [view, setView] = useState<AppContextType['view']>('login');
+  const [view, setView] = useState<AppContextType["view"]>("login");
   const [user, setUser] = useState<User | null>(null);
   const [loggedInAccount, setLoggedInAccount] = useState<Account | null>(null);
   const [linkedStudent, setLinkedStudent] = useState<User | null>(null);
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
 
-  // 🔄 Controla qué vista mostrar según el tipo de usuario
+  // --------------------------------------------------------
+  // 🔄 Selector automático de vista según el tipo de usuario
+  // --------------------------------------------------------
   useEffect(() => {
-  if (user) {
-    setView('dashboard');
-  } else if (loggedInAccount?.profileType === ProfileType.PARENT) {
-    setView('parent-home');
-  }
-}, [user, loggedInAccount]);
+    if (user?.role === "student") {
+      // Si el estudiante no tiene grupo → ir a la selección
+      if (!user.ageGroup) {
+        setView("age-selector");
+      } else {
+        setView("dashboard");
+      }
+    } else if (loggedInAccount?.profileType === "parent") {
+      setView("parent-home");
+    } else if (loggedInAccount?.profileType === "school") {
+      setView("school-dashboard");
+    }
+  }, [user, loggedInAccount]);
 
-
-  // ⚙️ Aquí definimos todas las funciones globales (login, register, etc.)
+  // ------------------------------
+  // 🔧 FUNCIONES DEL CONTEXTO
+  // ------------------------------
   const contextValue: AppContextType = {
     view,
     user,
@@ -46,181 +67,174 @@ const App: React.FC = () => {
     linkedStudent,
     isPremiumModalOpen,
 
-    openPremiumModal: () => setIsPremiumModalOpen(true),
-    closePremiumModal: () => setIsPremiumModalOpen(false),
+    // ------------------------------
+    // LOGIN COMPLETAMENTE CONECTADO
+    // ------------------------------
+    login: async (email, password, expectedRole = null) => {
+      try {
+        const response = await axios.post("http://127.0.0.1:8000/api/login/", {
+          username: email,
+          password,
+          expected_role: expectedRole,
+        });
 
-    upgradeToPremium: () => {
-      if (user) {
-        const updatedUser = { ...user, isPremium: true };
-        setUser(updatedUser);
-        MOCK_DB.users.set(user.name.toLowerCase(), updatedUser);
-      }
-    },
+        const { access, refresh, username, role } = response.data;
 
-    // ✅ LOGIN conectado al backend
-    login: async (email, password) => {
-  try {
-    const response = await axios.post("http://127.0.0.1:8000/api/login/", {
-      username: email, // puede ser username o email, según lo que pongas en el campo
-      password,
-    });
+        localStorage.setItem("access", access);
+        localStorage.setItem("refresh", refresh);
 
-    const { access, refresh, username, role } = response.data;
+        setLoggedInAccount({
+          name: username,
+          email,
+          profileType: role,
+        });
 
-    // Guardar tokens
-    localStorage.setItem("access", access);
-    localStorage.setItem("refresh", refresh);
+        // Crear usuario inicial vacío (edad se cargará desde backend luego)
+        setUser({
+          name: username,
+          role: role,
+          ageGroup: null,
+          xp: 0,
+          isPremium: false,
+          avatarCustomization: {
+            face: "🧑‍🚀",
+            headwear: "none",
+            eyewear: "none",
+            clothing: "tshirt",
+            backgroundColor: "bg-sky-200",
+          },
+          completedLessons: new Set(),
+          performance: {},
+          badges: [],
+          weeklyMissionProgress: {},
+          gameState: {},
+        });
 
-    // Actualizar estado según rol
-    const account = { name: username, email, profileType: role };
-    setLoggedInAccount(account);
-
-    // Cambiar vista automáticamente según tipo de usuario
-    if (role === "student") {
-      setView("dashboard");
-    } else if (role === "parent") {
-      setView("parent-home");
-    } else if (role === "teacher") {
-      setView("school-dashboard");
-    } else {
-      setView("dashboard");
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Error al iniciar sesión:", error);
-    return false;
-  }
-},
-
-    // 🔸 Login de estudiantes locales (puedes eliminarlo luego)
-    loginStudent: (name) => {
-      const storedUser = MOCK_DB.users.get(name.toLowerCase());
-      if (storedUser) {
-        setUser(storedUser);
         return true;
+      } catch (err) {
+        console.error("❌ Error en login:", err);
+        return false;
       }
-      return false;
     },
 
-    // ✅ Cerrar sesión
+    // ------------------------------
     logout: () => {
       setUser(null);
       setLoggedInAccount(null);
       setLinkedStudent(null);
-      setView('login');
+      setView("login");
     },
 
-    // ✅ REGISTRO conectado al backend
+    // ------------------------------
+    // REGISTRO CONECTADO AL BACKEND
+    // ------------------------------
     register: async (name, age, email, password, profileType) => {
       try {
-        await axios.post('http://127.0.0.1:8000/api/register/', {
+        await axios.post("http://127.0.0.1:8000/api/register/", {
           username: name,
           email,
           password,
           age,
           role:
-            profileType === 'parent'
-              ? 'parent'
-              : profileType === 'school'
-              ? 'teacher'
-              : 'student',
+            profileType === "parent"
+              ? "parent"
+              : profileType === "school"
+              ? "teacher"
+              : "student",
         });
-        setLoggedInAccount({ name, email, profileType });
+
+        setLoggedInAccount({
+          name,
+          email,
+          profileType,
+        });
+
         return true;
       } catch (error) {
-        console.error('Error al registrar:', error);
+        console.error("❌ Error al registrar:", error);
         return false;
       }
     },
 
-    // 🔸 Registro de estudiante (local temporal)
-    registerStudent: (name, ageGroup) => {
-      if (MOCK_DB.users.has(name.toLowerCase())) return false;
-      const newUser: User = {
-        name,
-        ageGroup,
-        xp: 0,
-        isPremium: false,
-        avatarCustomization: {
-          face: '🧑‍🚀',
-          headwear: 'none',
-          eyewear: 'none',
-          clothing: 'tshirt',
-          backgroundColor: 'bg-sky-200',
-        },
-        completedLessons: new Set(),
-        performance: {},
-        badges: [],
-        weeklyMissionProgress: {},
-        gameState: {},
-      };
-      MOCK_DB.users.set(name.toLowerCase(), newUser);
-      setUser(newUser);
-      return true;
-    },
+    // ------------------------------
+    // Requeridos para AppContextType
+    // ------------------------------
+    loginStudent: () => false, // no lo usas pero es obligatorio
+    registerStudent: () => false, // no se usa, pero necesario
 
-    // 🔸 Completar lección (todavía local)
-    completeLesson: (lesson, performance) => {
+    // ------------------------------
+    completeLesson: (lesson: Lesson, performance: Performance) => {
       if (!user) return;
-      const updatedUser = { ...user };
-      updatedUser.completedLessons = new Set(user.completedLessons);
-      if (!updatedUser.completedLessons.has(lesson.id)) {
-        updatedUser.xp += lesson.xp;
-        updatedUser.completedLessons.add(lesson.id);
+      const updated = { ...user };
+
+      updated.completedLessons = new Set(updated.completedLessons);
+      if (!updated.completedLessons.has(lesson.id)) {
+        updated.completedLessons.add(lesson.id);
+        updated.xp += lesson.xp;
       }
-      updatedUser.performance = { ...user.performance, [lesson.id]: performance };
-      setUser(updatedUser);
-      MOCK_DB.users.set(user.name.toLowerCase(), updatedUser);
+
+      updated.performance = {
+        ...updated.performance,
+        [lesson.id]: performance,
+      };
+
+      setUser(updated);
     },
 
-    // 🔸 Actualizar usuario (local)
-    updateUser: (updatedUser: User) => {
+    updateUser: (updatedUser) => {
       setUser(updatedUser);
-      MOCK_DB.users.set(updatedUser.name.toLowerCase(), updatedUser);
     },
 
-    // 🔸 Vincular estudiante con apoderado (local)
-    linkStudentAccount: async (studentName: string) => {
-      if (loggedInAccount && loggedInAccount.profileType === ProfileType.PARENT) {
-        const student = MOCK_DB.users.get(studentName.toLowerCase());
-        if (student) {
-          const updatedAccount = { ...loggedInAccount, linkedStudentName: student.name };
-          setLoggedInAccount(updatedAccount);
-          setLinkedStudent(student);
-          MOCK_DB.accounts.get(loggedInAccount.email.toLowerCase())!.account = updatedAccount;
-          return true;
-        }
-      }
-      return false;
+    // ------------------------------
+    openPremiumModal: () => setIsPremiumModalOpen(true),
+    closePremiumModal: () => setIsPremiumModalOpen(false),
+
+    upgradeToPremium: () => {
+      if (!user) return;
+      const updated = { ...user, isPremium: true };
+      setUser(updated);
     },
+
+    linkStudentAccount: async () => false,
   };
 
-  // 🔸 Renderiza la vista actual (login, dashboards, etc.)
+  // ------------------------------
+  // SISTEMA DE VISTAS
+  // ------------------------------
   const renderView = () => {
     switch (view) {
-      case 'dashboard':
+      case "dashboard":
         return <Dashboard />;
-      case 'parent-dashboard':
-        return <ParentDashboard />;
-        case 'parent-home':
-  return <ParentHome />;
-      case 'school-dashboard':
+
+      case "parent-home":
+        return <ParentHome />;
+
+      case "school-dashboard":
         return <SchoolDashboard />;
-      case 'age-selector':
-        return <AgeSelector />;
-      case 'login':
+
+      case "age-selector":
+        return (
+          <AgeSelectorPage
+            username={localStorage.getItem("student_username") || ""}
+            setView={setView}
+          />
+        );
+
       default:
         return <Login setView={setView} />;
     }
   };
 
-  // 🔸 Render final de la aplicación
+  // ------------------------------
+  // RENDER FINAL
+  // ------------------------------
   return (
     <AppContext.Provider value={contextValue}>
       {renderView()}
       {(user || loggedInAccount) && <FeedbackButton />}
-      {isPremiumModalOpen && <PremiumModal onClose={contextValue.closePremiumModal} />}
+      {isPremiumModalOpen && (
+        <PremiumModal onClose={contextValue.closePremiumModal} />
+      )}
     </AppContext.Provider>
   );
 };
