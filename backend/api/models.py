@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.conf import settings
 
 class CustomUser(AbstractUser):
     ROLE_CHOICES = [
@@ -30,3 +31,22 @@ class CustomUser(AbstractUser):
 
     def __str__(self):
         return f"{self.username} ({self.role})"
+
+class LessonProgress(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='lesson_progress'
+    )
+    lesson_id = models.CharField(max_length=150)
+    score = models.FloatField(default=0)        # 0–1, según tu Performance.score
+    time = models.FloatField(default=0)         # segundos que demoró
+    xp = models.IntegerField(default=0)         # XP ganado en esa lección
+    completed = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'lesson_id')
+
+    def __str__(self):
+        return f"{self.user.username} - {self.lesson_id}"

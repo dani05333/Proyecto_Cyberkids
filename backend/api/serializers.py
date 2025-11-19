@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from .models import CustomUser, LessonProgress
 
 User = get_user_model()
 
@@ -43,3 +44,8 @@ class UserRegisterSerializer(serializers.ModelSerializer):
             )
 
         return user
+
+class LessonProgressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LessonProgress
+        fields = ['lesson_id', 'score', 'time', 'xp', 'completed', 'updated_at']

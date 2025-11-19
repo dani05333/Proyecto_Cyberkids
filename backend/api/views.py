@@ -7,6 +7,11 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model, authenticate
 from .serializers import UserRegisterSerializer
 from .models import CustomUser
+from rest_framework.permissions import IsAuthenticated
+from .models import LessonProgress
+from .serializers import LessonProgressSerializer
+
+
 
 User = get_user_model()
 
@@ -145,4 +150,71 @@ def set_student_age_group(request):
     except CustomUser.DoesNotExist:
         return Response({"error": "Estudiante no encontrado"}, status=404)
 
+# ✅ Lista el progreso del usuario logueado
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_my_progress(request):
+    progress_qs = LessonProgress.objects.filter(user=request.user)
+    serializer = LessonProgressSerializer(progress_qs, many=True)
+    return Response(serializer.data, status=200)
 
+
+# ✅ Crear / actualizar el progreso de una lección
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_lesson_progress(request):
+    lesson_id = request.data.get("lesson_id")
+    score = request.data.get("score", 1)
+    time_spent = request.data.get("time", 0)
+    xp = request.data.get("xp", 0)
+
+    if not lesson_id:
+        return Response({"error": "lesson_id es requerido."}, status=400)
+
+    progress, created = LessonProgress.objects.update_or_create(
+        user=request.user,
+        lesson_id=lesson_id,
+        defaults={
+            "score": score,
+            "time": time_spent,
+            "xp": xp,
+            "completed": True,
+        }
+    )
+
+    serializer = LessonProgressSerializer(progress)
+    return Response(serializer.data, status=200)
+
+@api_view(["GET"])
+def get_leaderboard(request):
+    # Tomamos solo usuarios estudiante
+    students = CustomUser.objects.filter(role="student")
+
+    leaderboard = []
+
+    for student in students:
+        # Buscar progreso del estudiante
+        progress_rows = LessonProgress.objects.filter(user=student)
+        total_xp = sum([p.xp for p in progress_rows])
+
+        leaderboard.append({
+            "username": student.username,
+            "xp": total_xp,
+            "age_group": student.age_group,
+        })
+
+    # Ordenar de mayor a menor XP
+    leaderboard = sorted(leaderboard, key=lambda x: x["xp"], reverse=True)
+
+    return Response(leaderboard)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_me(request):
+    user = request.user
+    return Response({
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+        "age_group": user.age_group,
+    })

@@ -16,7 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from api.views import RegisterView, EmailTokenObtainPairView, get_student_by_username, create_child, set_student_age_group
+from api.views import RegisterView, EmailTokenObtainPairView, get_student_by_username, create_child, set_student_age_group, get_my_progress, update_lesson_progress, get_leaderboard, get_me
 
 
 urlpatterns = [
@@ -26,5 +26,11 @@ urlpatterns = [
     path('api/student/<str:username>/', get_student_by_username, name='get_student'),
     path('api/create_child/', create_child, name='create_child'),
     path('api/student/set-age-group', set_student_age_group, name='set_student_age_group'),
+    path('api/progress/', get_my_progress, name='get_my_progress'),
+    path('api/progress/update/', update_lesson_progress, name='update_lesson_progress'),
+    path('api/leaderboard/', get_leaderboard, name='leaderboard'),
+    path("api/me/", get_me),
+
+
 ]
 
