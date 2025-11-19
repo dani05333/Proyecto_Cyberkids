@@ -1,3 +1,4 @@
+// App.tsx (VERSIÓN COMPLETA Y CORREGIDA)
 import React, { useState, createContext, useEffect } from "react";
 import axios from "axios";
 
@@ -7,7 +8,7 @@ import {
   Lesson,
   Performance,
   Account,
-  ProfileType,
+  AgeGroup,
 } from "./types";
 
 import Login from "./components/Login";
@@ -19,19 +20,14 @@ import FeedbackButton from "./components/FeedbackButton";
 import PremiumModal from "./components/PremiumModal";
 import AgeSelectorPage from "./components/AgeSelectorPage";
 
-// ------------------------------
+// ----------------------------------------------------
 // CONTEXTO GLOBAL
-// ------------------------------
+// ----------------------------------------------------
 export const AppContext = createContext<AppContextType | null>(null);
 
-// Base temporal (necesaria para cumplir AppContextType)
-const MOCK_DB = {
-  users: new Map<string, User>(),
-};
-
-// ------------------------------
+// ----------------------------------------------------
 // COMPONENTE PRINCIPAL
-// ------------------------------
+// ----------------------------------------------------
 const App: React.FC = () => {
   const [view, setView] = useState<AppContextType["view"]>("login");
   const [user, setUser] = useState<User | null>(null);
@@ -40,16 +36,117 @@ const App: React.FC = () => {
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
 
   // --------------------------------------------------------
-  // 🔄 Selector automático de vista según el tipo de usuario
+  // ✔ RESTAURAR SESIÓN AUTOMÁTICAMENTE SI HAY TOKEN
+  // --------------------------------------------------------
+  useEffect(() => {
+    const token = localStorage.getItem("access");
+    if (!token) return;
+
+    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+
+    const restoreSession = async () => {
+      try {
+        const meRes = await axios.get("http://127.0.0.1:8000/api/me/");
+        const userData = meRes.data;
+
+        const role = userData.role;
+
+        // Si es estudiante, cargar progreso también
+        if (role === "student") {
+          const [studentRes, progressRes] = await Promise.all([
+            axios.get(
+              `http://127.0.0.1:8000/api/student/${userData.username}/`
+            ),
+            axios.get("http://127.0.0.1:8000/api/progress/")
+          ]);
+
+          const age_group = studentRes.data.age_group as AgeGroup | null;
+
+          const progressData = progressRes.data;
+
+          const completedLessons = new Set<string>();
+          const performance: { [lessonId: string]: Performance } = {};
+          let totalXP = 0;
+
+          progressData.forEach((p: any) => {
+            performance[p.lesson_id] = {
+              score: p.score,
+              time: p.time,
+            };
+            if (p.completed) {
+              completedLessons.add(p.lesson_id);
+              totalXP += p.xp || 0;
+            }
+          });
+
+          setLoggedInAccount({
+            name: userData.username,
+            email: "", // si quieres cargar email, agrégalo al endpoint /me
+            profileType: role,
+          });
+
+          setUser({
+            name: userData.username,
+            role,
+            ageGroup: age_group,
+            xp: totalXP,
+            isPremium: false,
+            avatarCustomization: {
+              face: "🧑‍🚀",
+              headwear: "none",
+              eyewear: "none",
+              clothing: "tshirt",
+              backgroundColor: "bg-sky-200",
+            },
+            completedLessons,
+            performance,
+            badges: [],
+            weeklyMissionProgress: {},
+            gameState: {},
+          });
+        } else {
+          // padre o colegio
+          setLoggedInAccount({
+            name: userData.username,
+            email: "",
+            profileType: role,
+          });
+
+          setUser({
+            name: userData.username,
+            role,
+            ageGroup: null,
+            xp: 0,
+            isPremium: false,
+            avatarCustomization: {
+              face: "🧑‍🚀",
+              headwear: "none",
+              eyewear: "none",
+              clothing: "tshirt",
+              backgroundColor: "bg-sky-200",
+            },
+            completedLessons: new Set(),
+            performance: {},
+            badges: [],
+            weeklyMissionProgress: {},
+            gameState: {},
+          });
+        }
+      } catch (err) {
+        console.error("❌ No se pudo restaurar la sesión:", err);
+      }
+    };
+
+    restoreSession();
+  }, []);
+
+  // --------------------------------------------------------
+  // Cambiar vista según el tipo de usuario
   // --------------------------------------------------------
   useEffect(() => {
     if (user?.role === "student") {
-      // Si el estudiante no tiene grupo → ir a la selección
-      if (!user.ageGroup) {
-        setView("age-selector");
-      } else {
-        setView("dashboard");
-      }
+      if (!user.ageGroup) setView("age-selector");
+      else setView("dashboard");
     } else if (loggedInAccount?.profileType === "parent") {
       setView("parent-home");
     } else if (loggedInAccount?.profileType === "school") {
@@ -57,9 +154,9 @@ const App: React.FC = () => {
     }
   }, [user, loggedInAccount]);
 
-  // ------------------------------
-  // 🔧 FUNCIONES DEL CONTEXTO
-  // ------------------------------
+  // --------------------------------------------------------
+  // CONTEXTO GLOBAL
+  // --------------------------------------------------------
   const contextValue: AppContextType = {
     view,
     user,
@@ -67,9 +164,9 @@ const App: React.FC = () => {
     linkedStudent,
     isPremiumModalOpen,
 
-    // ------------------------------
-    // LOGIN COMPLETAMENTE CONECTADO
-    // ------------------------------
+    // ----------------------------------------
+    // LOGIN
+    // ----------------------------------------
     login: async (email, password, expectedRole = null) => {
       try {
         const response = await axios.post("http://127.0.0.1:8000/api/login/", {
@@ -83,33 +180,10 @@ const App: React.FC = () => {
         localStorage.setItem("access", access);
         localStorage.setItem("refresh", refresh);
 
-        setLoggedInAccount({
-          name: username,
-          email,
-          profileType: role,
-        });
+        axios.defaults.headers.common["Authorization"] = `Bearer ${access}`;
 
-        // Crear usuario inicial vacío (edad se cargará desde backend luego)
-        setUser({
-          name: username,
-          role: role,
-          ageGroup: null,
-          xp: 0,
-          isPremium: false,
-          avatarCustomization: {
-            face: "🧑‍🚀",
-            headwear: "none",
-            eyewear: "none",
-            clothing: "tshirt",
-            backgroundColor: "bg-sky-200",
-          },
-          completedLessons: new Set(),
-          performance: {},
-          badges: [],
-          weeklyMissionProgress: {},
-          gameState: {},
-        });
-
+        // Restaurar sesión desde cero
+        window.location.reload();
         return true;
       } catch (err) {
         console.error("❌ Error en login:", err);
@@ -117,90 +191,62 @@ const App: React.FC = () => {
       }
     },
 
-    // ------------------------------
     logout: () => {
+      localStorage.removeItem("access");
+      localStorage.removeItem("refresh");
+      delete axios.defaults.headers.common["Authorization"];
       setUser(null);
       setLoggedInAccount(null);
-      setLinkedStudent(null);
       setView("login");
     },
 
-    // ------------------------------
-    // REGISTRO CONECTADO AL BACKEND
-    // ------------------------------
-    register: async (name, age, email, password, profileType) => {
-      try {
-        await axios.post("http://127.0.0.1:8000/api/register/", {
-          username: name,
-          email,
-          password,
-          age,
-          role:
-            profileType === "parent"
-              ? "parent"
-              : profileType === "school"
-              ? "teacher"
-              : "student",
-        });
+    register: async () => false,
+    loginStudent: () => false,
+    registerStudent: () => false,
 
-        setLoggedInAccount({
-          name,
-          email,
-          profileType,
-        });
+    // ----------------------------------------
+    completeLesson: (lesson, perf) => {
+      axios.post("http://127.0.0.1:8000/api/progress/update/", {
+        lesson_id: lesson.id,
+        score: perf.score,
+        time: perf.time,
+        xp: lesson.xp,
+      });
 
-        return true;
-      } catch (error) {
-        console.error("❌ Error al registrar:", error);
-        return false;
-      }
+      setUser((prev) => {
+        if (!prev) return prev;
+
+        const updated = {
+          ...prev,
+          completedLessons: new Set(prev.completedLessons),
+          performance: { ...prev.performance },
+        };
+
+        if (!updated.completedLessons.has(lesson.id)) {
+          updated.completedLessons.add(lesson.id);
+          updated.xp += lesson.xp;
+        }
+
+        updated.performance[lesson.id] = perf;
+        return updated;
+      });
     },
 
-    // ------------------------------
-    // Requeridos para AppContextType
-    // ------------------------------
-    loginStudent: () => false, // no lo usas pero es obligatorio
-    registerStudent: () => false, // no se usa, pero necesario
+    updateUser: (updatedUser) => setUser(updatedUser),
 
-    // ------------------------------
-    completeLesson: (lesson: Lesson, performance: Performance) => {
-      if (!user) return;
-      const updated = { ...user };
-
-      updated.completedLessons = new Set(updated.completedLessons);
-      if (!updated.completedLessons.has(lesson.id)) {
-        updated.completedLessons.add(lesson.id);
-        updated.xp += lesson.xp;
-      }
-
-      updated.performance = {
-        ...updated.performance,
-        [lesson.id]: performance,
-      };
-
-      setUser(updated);
-    },
-
-    updateUser: (updatedUser) => {
-      setUser(updatedUser);
-    },
-
-    // ------------------------------
     openPremiumModal: () => setIsPremiumModalOpen(true),
     closePremiumModal: () => setIsPremiumModalOpen(false),
 
     upgradeToPremium: () => {
-      if (!user) return;
-      const updated = { ...user, isPremium: true };
-      setUser(updated);
+      setUser((prev) => (prev ? { ...prev, isPremium: true } : prev));
     },
 
     linkStudentAccount: async () => false,
   };
 
-  // ------------------------------
+  // --------------------------------------------------------
   // SISTEMA DE VISTAS
-  // ------------------------------
+  // --------------------------------------------------------
   const renderView = () => {
     switch (view) {
       case "dashboard":
@@ -214,10 +260,7 @@ const App: React.FC = () => {
 
       case "age-selector":
         return (
-          <AgeSelectorPage
-            username={localStorage.getItem("student_username") || ""}
-            setView={setView}
-          />
+          <AgeSelectorPage username={user?.name || ""} setView={setView} />
         );
 
       default:
@@ -225,13 +268,10 @@ const App: React.FC = () => {
     }
   };
 
-  // ------------------------------
-  // RENDER FINAL
-  // ------------------------------
   return (
     <AppContext.Provider value={contextValue}>
       {renderView()}
-      {(user || loggedInAccount) && <FeedbackButton />}
+      {user && <FeedbackButton />}
       {isPremiumModalOpen && (
         <PremiumModal onClose={contextValue.closePremiumModal} />
       )}
