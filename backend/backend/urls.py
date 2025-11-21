@@ -1,36 +1,43 @@
-"""
-URL configuration for backend project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
 from django.contrib import admin
-from django.urls import path, include
-from api.views import RegisterView, EmailTokenObtainPairView, get_student_by_username, create_child, set_student_age_group, get_my_progress, update_lesson_progress, get_leaderboard, get_me
+from django.urls import path
 
+from api.views import (
+    RegisterView,
+    EmailTokenObtainPairView,
+    get_student_by_username,
+    set_student_age_group,
+    get_my_progress,
+    update_lesson_progress,
+    get_leaderboard,
+    get_me,
+    list_children,
+    create_child_api,
+    update_child,
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/register/', RegisterView.as_view(), name='register'),
-    path('api/login/', EmailTokenObtainPairView.as_view(), name='login'),
-    path('api/student/<str:username>/', get_student_by_username, name='get_student'),
-    path('api/create_child/', create_child, name='create_child'),
-    path('api/student/set-age-group', set_student_age_group, name='set_student_age_group'),
-    path('api/progress/', get_my_progress, name='get_my_progress'),
-    path('api/progress/update/', update_lesson_progress, name='update_lesson_progress'),
-    path('api/leaderboard/', get_leaderboard, name='leaderboard'),
-    path("api/me/", get_me),
 
+    # 🔹 Rutas estáticas primero
+    path('api/student/set-age-group/', set_student_age_group),
+    path('api/student/<str:username>/', get_student_by_username),
 
+    # 🔹 Auth
+    path('api/register/', RegisterView.as_view()),
+    path('api/login/', EmailTokenObtainPairView.as_view()),
+
+    # 🔹 Progreso
+    path('api/progress/', get_my_progress),
+    path('api/progress/update/', update_lesson_progress),
+
+    # 🔹 Leaderboard
+    path('api/leaderboard/', get_leaderboard),
+
+    # 🔹 Mi cuenta
+    path('api/me/', get_me),
+
+    # 🔹 Padres
+    path('api/parent/children/', list_children),
+    path('api/parent/create-child/', create_child_api),
+    path('api/parent/update-child/', update_child),
 ]
-

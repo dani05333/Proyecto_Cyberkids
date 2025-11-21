@@ -156,3 +156,6 @@ SIMPLE_JWT = {
 }
 
 APPEND_SLASH = True
+
+LANGUAGE_CODE = 'es'
+USE_I18N = True
