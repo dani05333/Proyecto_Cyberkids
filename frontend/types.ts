@@ -1,18 +1,24 @@
-
- 
+// --------------------------------------------------------
+// ENUM ORIGINAL QUE USA constants.ts
+// --------------------------------------------------------
 export enum AgeGroup {
-  KID = 'KID',
-  TWEEN = 'TWEEN',
-  TEEN = 'TEEN',
+  KID = "KID",
+  TWEEN = "TWEEN",
+  TEEN = "TEEN"
 }
 
-
+// --------------------------------------------------------
+// PerfilType
+// --------------------------------------------------------
 export enum ProfileType {
-  STUDENT = 'student',
-  PARENT = 'parent',
-  SCHOOL = 'school',
+  STUDENT = "student",
+  PARENT = "parent",
+  SCHOOL = "school",
 }
 
+// --------------------------------------------------------
+// Interfaces
+// --------------------------------------------------------
 export interface Performance {
   score: number;
   time: number;
@@ -26,21 +32,28 @@ export interface AvatarCustomization {
   backgroundColor: string;
 }
 
+// --------------------------------------------------------
+// USUARIO
+// --------------------------------------------------------
 export interface User {
-  // 🔹 Campos del backend Django
   id?: number;
-  username?: string;   // <-- El nombre de usuario del backend
-  email?: string;      // <-- Correo si existe
-  role?: string;       // <-- "student" | "parent" | "teacher"
-  linked_parent?: string | null; // <-- Apoderado vinculado, si aplica
 
-  // 🔹 Campos locales (para compatibilidad con MOCK_DB)
+  username?: string;
+  email?: string;
+  role?: "student" | "parent" | "school";
+  linked_parent?: string | null;
+
   name?: string;
+
+  // 🔥 AgeGroup vuelve a su formato original (KID/TWEEN/TEEN)
   ageGroup?: AgeGroup;
+
+  // 🔥 Tu edad REAL (6-9, 10-13, 14-17) SIGUE EXISTIENDO
+  age?: string | number | null;
+
   xp: number;
   isPremium: boolean;
 
-  // 🔹 Campos relacionados con el progreso y personalización
   avatarCustomization: AvatarCustomization;
   completedLessons: Set<string>;
   performance: { [lessonId: string]: Performance };
@@ -52,11 +65,13 @@ export interface User {
 export interface Account {
   name: string;
   email: string;
-  // FIX: Changed profileType to use string literals to resolve a type conflict in App.tsx.
-  profileType: 'parent' | 'school';
+  profileType: "parent" | "school" | "student";
   linkedStudentName?: string;
 }
 
+// --------------------------------------------------------
+// Contenidos
+// --------------------------------------------------------
 export type QuizQuestion = {
   question: string;
   options: string[];
@@ -65,19 +80,9 @@ export type QuizQuestion = {
   difficulty: number;
 };
 
-export type VideoContent = {
-  url: string;
-};
-
-export type GameContent = {
-  type: string;
-  description: string;
-};
-
-export type MissionContent = {
-  description: string;
-};
-
+export type VideoContent = { url: string };
+export type GameContent = { type: string; description: string };
+export type MissionContent = { description: string };
 export type PracticeCaseContent = {
   scenario: string;
   questions: {
@@ -88,12 +93,20 @@ export type PracticeCaseContent = {
   }[];
 };
 
+// --------------------------------------------------------
+// Módulos
+// --------------------------------------------------------
 export interface Lesson {
   id: string;
   title: string;
-  type: 'quiz' | 'video' | 'game' | 'mission' | 'practice-case';
+  type: "quiz" | "video" | "game" | "mission" | "practice-case";
   xp: number;
-  content: QuizQuestion[] | VideoContent | GameContent | MissionContent | PracticeCaseContent;
+  content:
+    | QuizQuestion[]
+    | VideoContent
+    | GameContent
+    | MissionContent
+    | PracticeCaseContent;
 }
 
 export interface Module {
@@ -117,42 +130,72 @@ export interface Badge {
   emoji: string;
 }
 
+// --------------------------------------------------------
+// CONTEXTO GLOBAL
+// --------------------------------------------------------
 export interface AppContextType {
-  view: 'login' | 'age-selector' | 'dashboard' | 'parent-dashboard' | 'school-dashboard' | 'register-student';
+  view:
+    | "login"
+    | "age-selector"
+    | "dashboard"
+    | "parent-home"
+    | "school-dashboard"
+    | "register-student";
+
+  setView: (view: AppContextType["view"]) => void;
+
   user: User | null;
   loggedInAccount: Account | null;
   linkedStudent: User | null;
-  login: (emailOrUsername: string, password: string, role?: string) => Promise<boolean>;
-  loginStudent: (name: string) => boolean;
-  logout: () => void;
-register: (
+
+  accessToken: string | null;
+  refreshToken: string | null;
+
+  login: (
+    emailOrUsername: string,
+    password: string,
+    expectedRole?: string | null
+  ) => Promise<boolean>;
+
+ register: (
   name: string,
   age: number,
   email: string,
   password: string,
   role: string
-) => Promise<boolean>;
+) => Promise<{ success: boolean; error: string | null }>;
+
+
+  loginStudent: (name: string) => boolean;
   registerStudent: (name: string, ageGroup: AgeGroup) => boolean;
+
+  logout: () => void;
+
   completeLesson: (lesson: Lesson, performance: Performance) => void;
+
   updateUser: (updatedUser: User) => void;
+
   linkStudentAccount: (studentName: string) => Promise<boolean>;
+
   isPremiumModalOpen: boolean;
   openPremiumModal: () => void;
   closePremiumModal: () => void;
   upgradeToPremium: () => void;
 }
 
-
+// --------------------------------------------------------
+// Modelo School
+// --------------------------------------------------------
 export interface Classroom {
-    id: string;
-    name: string;
-    teacher: string;
+  id: string;
+  name: string;
+  teacher: string;
 }
 
 export interface Student {
-    id: string;
-    name: string;
-    xp: number;
-    classId: string;
-    lastActivity: string;
+  id: string;
+  name: string;
+  xp: number;
+  classId: string;
+  lastActivity: string;
 }

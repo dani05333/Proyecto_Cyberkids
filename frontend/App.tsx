@@ -1,4 +1,6 @@
-// App.tsx (VERSIÓN COMPLETA Y CORREGIDA)
+// ----------------------------------------------------
+// App.tsx (VERSIÓN FINAL Y CORREGIDA)
+// ----------------------------------------------------
 import React, { useState, createContext, useEffect } from "react";
 import axios from "axios";
 
@@ -13,12 +15,12 @@ import {
 
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
-import ParentDashboard from "./components/ParentDashboard";
-import SchoolDashboard from "./components/SchoolDashboard";
 import ParentHome from "./components/ParentHome";
+import SchoolDashboard from "./components/SchoolDashboard";
+import AgeSelectorPage from "./components/AgeSelectorPage";
+
 import FeedbackButton from "./components/FeedbackButton";
 import PremiumModal from "./components/PremiumModal";
-import AgeSelectorPage from "./components/AgeSelectorPage";
 
 // ----------------------------------------------------
 // CONTEXTO GLOBAL
@@ -30,65 +32,66 @@ export const AppContext = createContext<AppContextType | null>(null);
 // ----------------------------------------------------
 const App: React.FC = () => {
   const [view, setView] = useState<AppContextType["view"]>("login");
+
   const [user, setUser] = useState<User | null>(null);
   const [loggedInAccount, setLoggedInAccount] = useState<Account | null>(null);
   const [linkedStudent, setLinkedStudent] = useState<User | null>(null);
+
+  const [accessToken, setAccessToken] = useState<string | null>(
+    localStorage.getItem("access")
+  );
+  const [refreshToken, setRefreshToken] = useState<string | null>(
+    localStorage.getItem("refresh")
+  );
+
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
 
-  // --------------------------------------------------------
-  // ✔ RESTAURAR SESIÓN AUTOMÁTICAMENTE SI HAY TOKEN
-  // --------------------------------------------------------
+  // ----------------------------------------------------
+  // 🔄 Restaurar sesión con token
+  // ----------------------------------------------------
   useEffect(() => {
-    const token = localStorage.getItem("access");
-    if (!token) return;
+    if (!accessToken) return;
 
-    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    axios.defaults.headers.common["Authorization"] = `Bearer ${accessToken}`;
 
     const restoreSession = async () => {
       try {
         const meRes = await axios.get("http://127.0.0.1:8000/api/me/");
-        const userData = meRes.data;
+        const me = meRes.data;
 
-        const role = userData.role;
+        const role = me.role;
 
-        // Si es estudiante, cargar progreso también
+        // -----------------------------
+        // Estudiante
+        // -----------------------------
         if (role === "student") {
           const [studentRes, progressRes] = await Promise.all([
-            axios.get(
-              `http://127.0.0.1:8000/api/student/${userData.username}/`
-            ),
-            axios.get("http://127.0.0.1:8000/api/progress/")
+            axios.get(`http://127.0.0.1:8000/api/student/${me.username}/`),
+            axios.get("http://127.0.0.1:8000/api/progress/"),
           ]);
 
-          const age_group = studentRes.data.age_group as AgeGroup | null;
+          const ageGroup = studentRes.data.age_group as AgeGroup | null;
+          const progress = progressRes.data;
 
-          const progressData = progressRes.data;
-
-          const completedLessons = new Set<string>();
-          const performance: { [lessonId: string]: Performance } = {};
           let totalXP = 0;
+          const completedLessons = new Set<string>();
+          const performance: { [id: string]: Performance } = {};
 
-          progressData.forEach((p: any) => {
+          progress.forEach((p: any) => {
+            if (p.completed) {
+              completedLessons.add(p.lesson_id);
+              totalXP += p.xp;
+            }
             performance[p.lesson_id] = {
               score: p.score,
               time: p.time,
             };
-            if (p.completed) {
-              completedLessons.add(p.lesson_id);
-              totalXP += p.xp || 0;
-            }
-          });
-
-          setLoggedInAccount({
-            name: userData.username,
-            email: "", // si quieres cargar email, agrégalo al endpoint /me
-            profileType: role,
           });
 
           setUser({
-            name: userData.username,
+            name: me.username,
             role,
-            ageGroup: age_group,
+            ageGroup,
             xp: totalXP,
             isPremium: false,
             avatarCustomization: {
@@ -104,16 +107,19 @@ const App: React.FC = () => {
             weeklyMissionProgress: {},
             gameState: {},
           });
-        } else {
-          // padre o colegio
+
           setLoggedInAccount({
-            name: userData.username,
-            email: "",
+            name: me.username,
+            email: me.email,
             profileType: role,
           });
 
+        } else {
+          // -----------------------------
+          // Apoderado o Colegio
+          // -----------------------------
           setUser({
-            name: userData.username,
+            name: me.username,
             role,
             ageGroup: null,
             xp: 0,
@@ -131,82 +137,151 @@ const App: React.FC = () => {
             weeklyMissionProgress: {},
             gameState: {},
           });
+
+          setLoggedInAccount({
+            name: me.username,
+            email: me.email,
+            profileType: role,
+          });
         }
+
       } catch (err) {
-        console.error("❌ No se pudo restaurar la sesión:", err);
+        console.error("❌ Error restaurando sesión:", err);
       }
     };
 
     restoreSession();
-  }, []);
+  }, [accessToken]);
 
-  // --------------------------------------------------------
-  // Cambiar vista según el tipo de usuario
-  // --------------------------------------------------------
+  // ----------------------------------------------------
+  // Cambio de vista según usuario
+  // ----------------------------------------------------
   useEffect(() => {
-    if (user?.role === "student") {
+    if (!user) return;
+
+    if (user.role === "student") {
       if (!user.ageGroup) setView("age-selector");
       else setView("dashboard");
-    } else if (loggedInAccount?.profileType === "parent") {
+    }
+
+    if (user.role === "parent") {
       setView("parent-home");
-    } else if (loggedInAccount?.profileType === "school") {
+    }
+
+    if (user.role === "school") {
       setView("school-dashboard");
     }
-  }, [user, loggedInAccount]);
+  }, [user]);
 
-  // --------------------------------------------------------
-  // CONTEXTO GLOBAL
-  // --------------------------------------------------------
+  // ----------------------------------------------------
+  // CONTEXTO GLOBAL (💯 COMPLETO)
+  // ----------------------------------------------------
   const contextValue: AppContextType = {
     view,
+    setView,
+
     user,
     loggedInAccount,
     linkedStudent,
+
+    accessToken,
+    refreshToken,
+
     isPremiumModalOpen,
 
-    // ----------------------------------------
+    // ---------------------------
     // LOGIN
-    // ----------------------------------------
-    login: async (email, password, expectedRole = null) => {
+    // ---------------------------
+    login: async (username, password, expectedRole = null) => {
       try {
-        const response = await axios.post("http://127.0.0.1:8000/api/login/", {
-          username: email,
+        const res = await axios.post("http://127.0.0.1:8000/api/login/", {
+          username,
           password,
           expected_role: expectedRole,
         });
 
-        const { access, refresh, username, role } = response.data;
+        const { access, refresh } = res.data;
 
         localStorage.setItem("access", access);
         localStorage.setItem("refresh", refresh);
 
+        setAccessToken(access);
+        setRefreshToken(refresh);
+
         axios.defaults.headers.common["Authorization"] = `Bearer ${access}`;
 
-        // Restaurar sesión desde cero
         window.location.reload();
         return true;
       } catch (err) {
-        console.error("❌ Error en login:", err);
+        console.error("❌ Error login:", err);
         return false;
       }
     },
 
+    // ---------------------------
+    // REGISTRO
+    // ---------------------------
+    register: async (username, age, email, password, role) => {
+      try {
+        const res = await axios.post("http://127.0.0.1:8000/api/register/", {
+          username,
+          age,
+          email,
+          password,
+          role,
+        });
+
+        const childPass = res.data.child_password;
+        if (childPass) localStorage.setItem("childPassword", childPass);
+
+        return { success: true, error: null };
+      } catch (err: any) {
+        console.error("❌ Error registro:", err);
+
+        let backendError = "Error desconocido";
+
+        // errores típicos del backend Django
+        if (err.response?.data?.username) {
+          backendError = err.response.data.username[0];
+        } else if (err.response?.data?.email) {
+          backendError = err.response.data.email[0];
+        } else if (err.response?.data?.error) {
+          backendError = err.response.data.error;
+        }
+
+        return { success: false, error: backendError };
+      }
+    },
+
+
+    // ---------------------------
     logout: () => {
       localStorage.removeItem("access");
       localStorage.removeItem("refresh");
+
+      setAccessToken(null);
+      setRefreshToken(null);
+
       delete axios.defaults.headers.common["Authorization"];
+
       setUser(null);
       setLoggedInAccount(null);
+
       setView("login");
     },
 
-    register: async () => false,
+    // ---------------------------
+    // FUNCIONES REQUERIDAS POR EL TYPE
+    // ---------------------------
     loginStudent: () => false,
     registerStudent: () => false,
+    linkStudentAccount: async () => false,
 
-    // ----------------------------------------
-    completeLesson: (lesson, perf) => {
-      axios.post("http://127.0.0.1:8000/api/progress/update/", {
+    // ---------------------------
+    // Progreso (estudiante)
+    // ---------------------------
+    completeLesson: async (lesson, perf) => {
+      await axios.post("http://127.0.0.1:8000/api/progress/update/", {
         lesson_id: lesson.id,
         score: perf.score,
         time: perf.time,
@@ -215,12 +290,10 @@ const App: React.FC = () => {
 
       setUser((prev) => {
         if (!prev) return prev;
+        const updated = { ...prev };
 
-        const updated = {
-          ...prev,
-          completedLessons: new Set(prev.completedLessons),
-          performance: { ...prev.performance },
-        };
+        updated.completedLessons = new Set(prev.completedLessons);
+        updated.performance = { ...prev.performance };
 
         if (!updated.completedLessons.has(lesson.id)) {
           updated.completedLessons.add(lesson.id);
@@ -232,21 +305,18 @@ const App: React.FC = () => {
       });
     },
 
-    updateUser: (updatedUser) => setUser(updatedUser),
+    updateUser: (u) => setUser(u),
 
     openPremiumModal: () => setIsPremiumModalOpen(true),
     closePremiumModal: () => setIsPremiumModalOpen(false),
 
-    upgradeToPremium: () => {
-      setUser((prev) => (prev ? { ...prev, isPremium: true } : prev));
-    },
-
-    linkStudentAccount: async () => false,
+    upgradeToPremium: () =>
+      setUser((prev) => (prev ? { ...prev, isPremium: true } : prev)),
   };
 
-  // --------------------------------------------------------
+  // ----------------------------------------------------
   // SISTEMA DE VISTAS
-  // --------------------------------------------------------
+  // ----------------------------------------------------
   const renderView = () => {
     switch (view) {
       case "dashboard":
@@ -259,9 +329,7 @@ const App: React.FC = () => {
         return <SchoolDashboard />;
 
       case "age-selector":
-        return (
-          <AgeSelectorPage username={user?.name || ""} setView={setView} />
-        );
+        return <AgeSelectorPage username={user?.name || ""} setView={setView} />;
 
       default:
         return <Login setView={setView} />;

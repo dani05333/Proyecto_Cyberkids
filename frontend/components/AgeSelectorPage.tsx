@@ -1,69 +1,68 @@
 import React, { useContext } from "react";
-import { AppContext } from "../App";
-import { AppContextType, AgeGroup } from "../types";
 import axios from "axios";
+import { AppContext } from "../App";
+import { AppContextType } from "../types";
 
-interface AgeSelectorPageProps {
-  username: string;
-  setView: (view: AppContextType["view"]) => void;
-}
+const API = "http://127.0.0.1:8000/api";
 
-const AgeSelectorPage: React.FC<AgeSelectorPageProps> = ({ username, setView }) => {
+const AgeSelectorPage: React.FC<{ username: string; setView: any }> = ({
+  username,
+  setView,
+}) => {
   const context = useContext(AppContext) as AppContextType;
 
-  const handleSelectAge = async (ageGroup: AgeGroup) => {
-  try {
-    const response = await axios.post(
-      "http://127.0.0.1:8000/api/student/set-age-group",
-      {
-        username,
-        age_group: ageGroup,
-      }
-    );
+  const handleSelectAge = async (range: string) => {
+    try {
+      await axios.post(
+        `${API}/student/set-age-group/`,
+        { username, age_group: range },
+        {
+          headers: {
+            Authorization: `Bearer ${context.accessToken}`,
+          },
+        }
+      );
 
-    if (context.user) {
+      // guardar en frontend EXACTAMENTE LO MISMO
       context.updateUser({
-        ...context.user,
-        ageGroup: response.data.age_group,
+        ...context.user!,
+        ageGroup: range as any,
       });
+
+      setView("dashboard");
+
+    } catch (err) {
+      console.error("Error al guardar edad:", err);
+      alert("No se pudo guardar la edad, intenta nuevamente.");
     }
-
-    alert("Edad guardada correctamente");
-    setView("dashboard");
-  } catch (err) {
-    console.error("Error al guardar edad:", err);
-    alert("Hubo un error al guardar tu edad. Intenta nuevamente.");
-  }
-};
-
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6">
-      <h2 className="text-3xl font-bold text-slate-800 mb-4">¡Bienvenid@, {username}!</h2>
-      <p className="text-slate-600 mb-6 text-center max-w-md">
-        Selecciona tu rango de edad para personalizar tu aventura en CyberKids:
-      </p>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-6">
+      <h1 className="text-3xl font-bold text-slate-800 mb-6">
+        ¿Qué edad tienes?
+      </h1>
 
-      <div className="flex flex-col gap-3 w-full max-w-xs">
+      <div className="space-y-4 w-full max-w-sm">
         <button
-          onClick={() => handleSelectAge(AgeGroup.KID)}
-          className="py-3 px-4 rounded-lg bg-sky-100 text-sky-800 font-semibold hover:bg-sky-200"
+          onClick={() => handleSelectAge("6-9")}
+          className="w-full bg-sky-500 text-white py-3 rounded-lg hover:bg-sky-600"
         >
-          Niño (6–9 años)
+          6 a 9 años
         </button>
 
         <button
-          onClick={() => handleSelectAge(AgeGroup.TWEEN)}
-          className="py-3 px-4 rounded-lg bg-amber-100 text-amber-800 font-semibold hover:bg-amber-200"
+          onClick={() => handleSelectAge("10-13")}
+          className="w-full bg-sky-500 text-white py-3 rounded-lg hover:bg-sky-600"
         >
-          Preadolescente (10–12 años)
+          10 a 13 años
         </button>
 
         <button
-          onClick={() => handleSelectAge(AgeGroup.TEEN)}
-          className="py-3 px-4 rounded-lg bg-emerald-100 text-emerald-800 font-semibold hover:bg-emerald-200"
+          onClick={() => handleSelectAge("14-17")}
+          className="w-full bg-sky-500 text-white py-3 rounded-lg hover:bg-sky-600"
         >
-          Adolescente (13–16 años)
+          14 a 17 años
         </button>
       </div>
     </div>
