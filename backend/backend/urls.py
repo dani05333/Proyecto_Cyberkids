@@ -13,31 +13,51 @@ from api.views import (
     list_children,
     create_child_api,
     update_child,
+    send_verification_code,   # ✅ verificación
+    verify_email,             # ✅ verificación
 )
 
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # 🔹 Rutas estáticas primero
-    path('api/student/set-age-group/', set_student_age_group),
-    path('api/student/<str:username>/', get_student_by_username),
+    # ---------------------------
+    # 🔐 Auth
+    # ---------------------------
+    path('api/register/', RegisterView.as_view(), name='register'),
+    path('api/login/', EmailTokenObtainPairView.as_view(), name='login'),
 
-    # 🔹 Auth
-    path('api/register/', RegisterView.as_view()),
-    path('api/login/', EmailTokenObtainPairView.as_view()),
+    # ---------------------------
+    # 🔏 Verificación de correo
+    # ---------------------------
+    path('api/send-verification-code/', send_verification_code, name='send_verification_code'),
+    path('api/verify-email/', verify_email, name='verify_email'),
 
-    # 🔹 Progreso
-    path('api/progress/', get_my_progress),
-    path('api/progress/update/', update_lesson_progress),
+    # ---------------------------
+    # 👦 Estudiantes
+    # ---------------------------
+    path('api/student/set-age-group/', set_student_age_group, name='set_age_group'),
+    path('api/student/<str:username>/', get_student_by_username, name='get_student'),
 
-    # 🔹 Leaderboard
-    path('api/leaderboard/', get_leaderboard),
+    # ---------------------------
+    # 🧩 Progreso de lecciones
+    # ---------------------------
+    path('api/progress/', get_my_progress, name='get_progress'),
+    path('api/progress/update/', update_lesson_progress, name='update_progress'),
 
-    # 🔹 Mi cuenta
-    path('api/me/', get_me),
+    # ---------------------------
+    # 🏆 Ranking
+    # ---------------------------
+    path('api/leaderboard/', get_leaderboard, name='leaderboard'),
 
-    # 🔹 Padres
-    path('api/parent/children/', list_children),
-    path('api/parent/create-child/', create_child_api),
-    path('api/parent/update-child/', update_child),
+    # ---------------------------
+    # 👤 Mi perfil
+    # ---------------------------
+    path('api/me/', get_me, name='me'),
+
+    # ---------------------------
+    # 👪 Padres e hijos
+    # ---------------------------
+    path('api/parent/children/', list_children, name='list_children'),
+    path('api/parent/create-child/', create_child_api, name='create_child'),
+    path('api/parent/update-child/', update_child, name='update_child'),
 ]

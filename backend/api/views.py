@@ -6,6 +6,12 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from django.contrib.auth import get_user_model, authenticate
+from django.utils import timezone
+from django.core.mail import send_mail
+from django.conf import settings
+
+from datetime import timedelta
+import secrets
 
 from .serializers import (
     UserRegisterSerializer,
@@ -18,9 +24,39 @@ from .models import CustomUser, LessonProgress
 User = get_user_model()
 
 
-# --------------------------------------------------------
+# ========================================================
+# 🔐 HELPER: generar y enviar código de verificación
+# ========================================================
+def _generate_and_send_verification_code(user: CustomUser):
+    """
+    Genera un código de 6 dígitos, lo guarda con expiración
+    y lo envía al usuario por correo.
+    """
+    code = f"{secrets.randbelow(1000000):06d}"
+
+    user.verification_code = code
+    user.verification_code_expires_at = timezone.now() + timedelta(minutes=15)
+    user.save(update_fields=["verification_code", "verification_code_expires_at"])
+
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@cyberkids.cl")
+
+    send_mail(
+        subject="Código de verificación - CyberKids Chile",
+        message=(
+            f"Hola {user.username},\n\n"
+            f"Tu código de verificación es: {code}\n"
+            f"Este código expira en 15 minutos.\n\n"
+            f"Equipo CyberKids Chile"
+        ),
+        from_email=from_email,
+        recipient_list=[user.email],
+        fail_silently=False,
+    )
+
+
+# ========================================================
 # 🟦 REGISTRO
-# --------------------------------------------------------
+# ========================================================
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserRegisterSerializer
@@ -31,10 +67,14 @@ class RegisterView(generics.CreateAPIView):
         if serializer.is_valid():
             user = serializer.save()
 
+            # Solo ADULTOS deben verificar
+            if user.role in ["parent", "teacher", "admin"]:
+                _generate_and_send_verification_code(user)
+
             child_password = getattr(user, "generated_child_password", None)
 
             return Response({
-                "message": "Usuario creado correctamente",
+                "message": "Usuario creado correctamente. Revisa tu correo para verificar la cuenta.",
                 "username": user.username,
                 "email": user.email,
                 "role": user.role,
@@ -44,15 +84,16 @@ class RegisterView(generics.CreateAPIView):
         return Response(serializer.errors, status=400)
 
 
-# --------------------------------------------------------
-# 🟦 LOGIN (username o email)
-# --------------------------------------------------------
+# ========================================================
+# 🟦 LOGIN (con bloqueo por falta de verificación)
+# ========================================================
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         username_or_email = attrs.get("username")
         password = attrs.get("password")
         expected_role = self.context['request'].data.get("expected_role")
 
+        # Permite usar email como username
         try:
             user = User.objects.get(email=username_or_email)
             username_or_email = user.username
@@ -63,12 +104,19 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         if not user:
             raise serializers.ValidationError("Credenciales inválidas.")
+
         if not user.is_active:
             raise serializers.ValidationError("Cuenta inactiva.")
 
+        # ❗ Bloqueo si NO ha verificado
+        if user.role in ["parent", "teacher", "admin"] and not user.email_verified:
+            raise serializers.ValidationError(
+                "Debes verificar tu correo antes de iniciar sesión."
+            )
+
         if expected_role and user.role != expected_role:
             raise serializers.ValidationError(
-                f"Este usuario no tiene permisos para ingresar como {expected_role}."
+                f"No tienes permisos para ingresar como {expected_role}."
             )
 
         data = super().validate(attrs)
@@ -81,28 +129,97 @@ class EmailTokenObtainPairView(TokenObtainPairView):
     serializer_class = EmailTokenObtainPairSerializer
 
 
-# --------------------------------------------------------
-# 🟦 OBTENER ESTUDIANTE
-# --------------------------------------------------------
+# ========================================================
+# 🟦 ENVIAR / REENVIAR CÓDIGO DE VERIFICACIÓN
+# ========================================================
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def send_verification_code(request):
+    email = request.data.get("email")
+    if not email:
+        return Response({"error": "Debes enviar el correo."}, status=400)
+
+    email = email.lower().strip()
+
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        return Response({"error": "No existe un usuario con este correo."}, status=404)
+
+    if user.email_verified:
+        return Response({"message": "Este correo ya está verificado."}, status=200)
+
+    _generate_and_send_verification_code(user)
+
+    return Response({"message": "Código de verificación enviado."}, status=200)
+
+
+# ========================================================
+# 🟦 VERIFICAR CORREO
+# ========================================================
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def verify_email(request):
+    email = request.data.get("email")
+    code = request.data.get("code")
+
+    if not email or not code:
+        return Response({"error": "Debes enviar correo y código."}, status=400)
+
+    email = email.lower().strip()
+
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        return Response({"error": "No existe un usuario con este correo."}, status=404)
+
+    if user.email_verified:
+        return Response({"message": "El correo ya está verificado."}, status=200)
+
+    # Validar código existente
+    if not user.verification_code:
+        return Response({"error": "No hay código activo. Solicita uno nuevo."}, status=400)
+
+    if timezone.now() > user.verification_code_expires_at:
+        return Response({"error": "El código ha expirado."}, status=400)
+
+    if code != user.verification_code:
+        return Response({"error": "Código incorrecto."}, status=400)
+
+    # Marcar como verificado
+    user.email_verified = True
+    user.verification_code = None
+    user.verification_code_expires_at = None
+    user.save(update_fields=[
+        "email_verified", "verification_code", "verification_code_expires_at"
+    ])
+
+    return Response({"message": "Correo verificado correctamente."}, status=200)
+
+
+# ========================================================
+# 🟦 OBTENER ESTUDIANTE POR USERNAME
+# ========================================================
 @api_view(['GET'])
 def get_student_by_username(request, username):
     try:
-        student = CustomUser.objects.get(username=username, role='student')
-        return Response({
-            "id": student.id,
-            "username": student.username,
-            "email": student.email,
-            "linked_parent": student.linked_student.username if student.linked_student else None,
-            "age_group": student.age_group,
-            "age": student.age,
-        })
+        student = CustomUser.objects.get(username=username, role="student")
     except CustomUser.DoesNotExist:
         return Response({"error": "Estudiante no encontrado"}, status=404)
 
+    return Response({
+        "id": student.id,
+        "username": student.username,
+        "email": student.email,
+        "linked_parent": student.linked_student.username if student.linked_student else None,
+        "age_group": student.age_group,
+        "age": student.age,
+    })
 
-# --------------------------------------------------------
+
+# ========================================================
 # 🟦 SET AGE GROUP
-# --------------------------------------------------------
+# ========================================================
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def set_student_age_group(request):
@@ -114,22 +231,22 @@ def set_student_age_group(request):
 
     try:
         student = CustomUser.objects.get(username=username, role="student")
-        student.age_group = age_group
-        student.save()
-        return Response({"message": "Edad actualizada", "age_group": student.age_group})
     except CustomUser.DoesNotExist:
         return Response({"error": "Estudiante no encontrado"}, status=404)
 
+    student.age_group = age_group
+    student.save()
+    return Response({"message": "Grupo de edad actualizado correctamente"})
 
-# --------------------------------------------------------
+
+# ========================================================
 # 🟦 PROGRESO
-# --------------------------------------------------------
+# ========================================================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_my_progress(request):
-    progress_qs = LessonProgress.objects.filter(user=request.user)
-    serializer = LessonProgressSerializer(progress_qs, many=True)
-    return Response(serializer.data)
+    progress = LessonProgress.objects.filter(user=request.user)
+    return Response(LessonProgressSerializer(progress, many=True).data)
 
 
 @api_view(['POST'])
@@ -151,35 +268,32 @@ def update_lesson_progress(request):
         }
     )
 
-    serializer = LessonProgressSerializer(progress)
-    return Response(serializer.data)
+    return Response(LessonProgressSerializer(progress).data)
 
 
-# --------------------------------------------------------
+# ========================================================
 # 🟦 LEADERBOARD
-# --------------------------------------------------------
+# ========================================================
 @api_view(["GET"])
 def get_leaderboard(request):
-    students = CustomUser.objects.filter(role="student")
     leaderboard = []
 
-    for student in students:
-        progress_rows = LessonProgress.objects.filter(user=student)
-        total_xp = sum(p.xp for p in progress_rows)
-
+    for student in CustomUser.objects.filter(role="student"):
+        total_xp = sum(p.xp for p in LessonProgress.objects.filter(user=student))
         leaderboard.append({
             "username": student.username,
             "xp": total_xp,
             "age_group": student.age_group,
         })
 
-    leaderboard = sorted(leaderboard, key=lambda x: x["xp"], reverse=True)
+    leaderboard.sort(key=lambda x: x["xp"], reverse=True)
+
     return Response(leaderboard)
 
 
-# --------------------------------------------------------
+# ========================================================
 # 🟦 MI PERFIL
-# --------------------------------------------------------
+# ========================================================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_me(request):
@@ -192,36 +306,27 @@ def get_me(request):
     })
 
 
-# ===================================================================
-# 🟥🟥🟥 PARENT — CHILDREN (CON CAMBIO DE CONTRASEÑA CORRECTO) 🟥🟥🟥
-# ===================================================================
-
-# --------------------------------------------------------
-# 🟦 LISTAR HIJOS
-# --------------------------------------------------------
+# ========================================================
+# 🟥 PADRES — GESTIÓN DE HIJOS
+# ========================================================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_children(request):
     parent = request.user
     children = CustomUser.objects.filter(linked_student=parent, role="student")
 
-    result = []
-    for child in children:
-        result.append({
-            "id": child.id,
-            "username": child.username,
-            "age": child.age,
+    return Response([
+        {
+            "id": c.id,
+            "username": c.username,
+            "age": c.age,
             "password": "",
-            "password_changed_once": child.password_changed_once,  # ← AGREGADO
-        })
+            "password_changed_once": c.password_changed_once,
+        }
+        for c in children
+    ])
 
-    return Response(result, status=200)
 
-
-
-# --------------------------------------------------------
-# 🟦 CREAR HIJO
-# --------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_child_api(request):
@@ -236,9 +341,9 @@ def create_child_api(request):
         return Response({"error": "Ese usuario ya existe"}, status=400)
 
     password = generate_secure_password()
-    fake_email = f"{username.lower()}@child.cyberkids.local"
+    fake_email = f"{username.lower()}@child.cyberkids.cl"
 
-    child = CustomUser.objects.create_user(
+    CustomUser.objects.create_user(
         username=username,
         email=fake_email,
         password=password,
@@ -254,9 +359,6 @@ def create_child_api(request):
     }, status=201)
 
 
-# --------------------------------------------------------
-# 🟦 ACTUALIZAR HIJO (CON VALIDACIÓN DE CONTRASEÑA ANTERIOR)
-# --------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def update_child(request):
@@ -271,16 +373,15 @@ def update_child(request):
     new_password = request.data.get("new_password")
     old_password = request.data.get("old_password")
 
-    # 👉 Validación username duplicado
+    # Validar username duplicado
     if new_username:
         if CustomUser.objects.filter(username=new_username).exclude(id=child_id).exists():
-            return Response({"error": "Este nombre de usuario ya está registrado."}, status=400)
+            return Response({"error": "Nombre de usuario ya registrado."}, status=400)
         child.username = new_username
 
-    # 👉 Validación de contraseña
+    # Cambiar contraseña
     if new_password:
 
-        # ❗ Si ya había cambiado antes → debe ingresar contraseña anterior correcta
         if child.password_changed_once:
             if not old_password:
                 return Response({"error": "Debes ingresar la contraseña anterior."}, status=400)
@@ -288,10 +389,7 @@ def update_child(request):
             if not child.check_password(old_password):
                 return Response({"error": "La contraseña anterior no es correcta."}, status=400)
 
-        # Guardar nueva contraseña
         child.set_password(new_password)
-
-        # Marcar que ahora ya cambió contraseña una vez
         child.password_changed_once = True
 
     child.save()

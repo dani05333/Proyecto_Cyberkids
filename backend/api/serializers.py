@@ -4,17 +4,21 @@ from .models import CustomUser, LessonProgress
 
 import secrets
 import string
+import re
 
 User = get_user_model()
 
 # --------------------------------------------------------
-# 🔐 Función para generar CONTRASEÑA SEGURA
+# 🔐 GENERADOR DE CONTRASEÑA SEGURA PARA HIJOS
 # --------------------------------------------------------
 def generate_secure_password(length=10):
-    chars = string.ascii_letters + string.digits + "!@#$%^&*?"
+    chars = string.ascii_letters + string.digits + "!@#$%^&*?.-_+=/"
     return ''.join(secrets.choice(chars) for _ in range(length))
 
 
+# =====================================================================
+# 🟦 SERIALIZER DE REGISTRO
+# =====================================================================
 class UserRegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
@@ -23,7 +27,7 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'password', 'age', 'role']
 
     # --------------------------------------------------------
-    # Validar USERNAME duplicado
+    # Validación USERNAME duplicado
     # --------------------------------------------------------
     def validate_username(self, value):
         if not value:
@@ -33,22 +37,37 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         return value
 
     # --------------------------------------------------------
-    # Validar email en minúsculas y sin duplicados
+    # Validación EMAIL realista
     # --------------------------------------------------------
     def validate_email(self, value):
         if not value:
             raise serializers.ValidationError("El correo electrónico es obligatorio.")
+
         value = value.lower().strip()
+
+        # Estructura mínima aceptable
+        if "@" not in value or "." not in value.split("@")[-1]:
+            raise serializers.ValidationError("El correo electrónico no tiene un formato válido.")
+
+        domain = value.split("@")[-1]
+
+        # Dominios falsos comunes
+        invalid_domains = [
+            "test.com", "fake.com", "correo.com", "email.com",
+            "example.com", "mail.com"
+        ]
+        if domain in invalid_domains:
+            raise serializers.ValidationError("Debes ingresar un correo real (no un dominio inventado).")
+
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError("Este correo ya está registrado.")
+
         return value
 
     # --------------------------------------------------------
-    # VALIDAR CONTRASEÑA SEGURA DEL APODERADO / COLEGIO
+    # Validación CONTRASEÑA SEGURA
     # --------------------------------------------------------
     def validate_password(self, value):
-        import re
-
         if len(value) < 8:
             raise serializers.ValidationError("La contraseña debe tener al menos 8 caracteres.")
 
@@ -67,24 +86,31 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         return value
 
     # --------------------------------------------------------
-    # Crear usuario (igual que antes)
+    # CREAR USUARIO + CREAR HIJO AUTOMÁTICO SI ES APODERADO
     # --------------------------------------------------------
     def create(self, validated_data):
-        validated_data['email'] = validated_data['email'].lower().strip()
 
+        validated_data['email'] = validated_data['email'].lower().strip()
+        role = validated_data.get('role', 'student')
+
+        # Crear usuario principal
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
             password=validated_data['password'],
             age=validated_data.get('age'),
-            role=validated_data.get('role', 'student'),
+            role=role,
         )
 
+        # --------------------------------------------------------
+        # 👨‍👦 Si es APODERADO → crear automáticamente hijo
+        # --------------------------------------------------------
         if user.role == 'parent':
-            fake_email = f"{user.username.lower()}_child@cyberkids.local"
-            child_password = generate_secure_password()
 
-            child = User.objects.create_user(
+            child_password = generate_secure_password()
+            fake_email = f"{user.username.lower()}_child@cyberkids.local"
+
+            User.objects.create_user(
                 username=f"student_{user.username}",
                 email=fake_email,
                 password=child_password,
@@ -92,16 +118,23 @@ class UserRegisterSerializer(serializers.ModelSerializer):
                 linked_student=user
             )
 
+            # Para que el RegisterView lo devuelva al frontend
             user.generated_child_password = child_password
 
         return user
 
 
-
-# --------------------------------------------------------
-# Serializer del progreso de lecciones
-# --------------------------------------------------------
+# =====================================================================
+# 🟦 SERIALIZER DEL PROGRESO DE LECCIONES
+# =====================================================================
 class LessonProgressSerializer(serializers.ModelSerializer):
     class Meta:
         model = LessonProgress
-        fields = ['lesson_id', 'score', 'time', 'xp', 'completed', 'updated_at']
+        fields = [
+            'lesson_id',
+            'score',
+            'time',
+            'xp',
+            'completed',
+            'updated_at'
+        ]
