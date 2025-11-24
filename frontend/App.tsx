@@ -1,5 +1,5 @@
 // ----------------------------------------------------
-// App.tsx (VERSIÓN FINAL Y CORREGIDA)
+// App.tsx (VERSIÓN FINAL — con verificación por correo)
 // ----------------------------------------------------
 import React, { useState, createContext, useEffect } from "react";
 import axios from "axios";
@@ -7,7 +7,6 @@ import axios from "axios";
 import {
   AppContextType,
   User,
-  Lesson,
   Performance,
   Account,
   AgeGroup,
@@ -35,7 +34,6 @@ const App: React.FC = () => {
 
   const [user, setUser] = useState<User | null>(null);
   const [loggedInAccount, setLoggedInAccount] = useState<Account | null>(null);
-  const [linkedStudent, setLinkedStudent] = useState<User | null>(null);
 
   const [accessToken, setAccessToken] = useState<string | null>(
     localStorage.getItem("access")
@@ -45,6 +43,9 @@ const App: React.FC = () => {
   );
 
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
+
+  // Nuevo: guarda errores del backend para Login.tsx
+  const [lastError, setLastError] = useState<string | null>(null);
 
   // ----------------------------------------------------
   // 🔄 Restaurar sesión con token
@@ -113,11 +114,12 @@ const App: React.FC = () => {
             email: me.email,
             profileType: role,
           });
+        }
 
-        } else {
-          // -----------------------------
-          // Apoderado o Colegio
-          // -----------------------------
+        // -----------------------------
+        // Apoderado / Colegio
+        // -----------------------------
+        else {
           setUser({
             name: me.username,
             role,
@@ -144,7 +146,6 @@ const App: React.FC = () => {
             profileType: role,
           });
         }
-
       } catch (err) {
         console.error("❌ Error restaurando sesión:", err);
       }
@@ -154,7 +155,7 @@ const App: React.FC = () => {
   }, [accessToken]);
 
   // ----------------------------------------------------
-  // Cambio de vista según usuario
+  // Cambiar vista al loguear
   // ----------------------------------------------------
   useEffect(() => {
     if (!user) return;
@@ -174,7 +175,7 @@ const App: React.FC = () => {
   }, [user]);
 
   // ----------------------------------------------------
-  // CONTEXTO GLOBAL (💯 COMPLETO)
+  // CONTEXTO GLOBAL (💯 COMPLETO + lastError)
   // ----------------------------------------------------
   const contextValue: AppContextType = {
     view,
@@ -182,17 +183,24 @@ const App: React.FC = () => {
 
     user,
     loggedInAccount,
-    linkedStudent,
+
+    // FALTABAN ESTOS 2 ✔
+    linkedStudent: null,
+    lastError,
+    clearError: () => setLastError(null),
 
     accessToken,
     refreshToken,
 
     isPremiumModalOpen,
 
+
     // ---------------------------
     // LOGIN
     // ---------------------------
     login: async (username, password, expectedRole = null) => {
+      setLastError(null);
+
       try {
         const res = await axios.post("http://127.0.0.1:8000/api/login/", {
           username,
@@ -202,6 +210,7 @@ const App: React.FC = () => {
 
         const { access, refresh } = res.data;
 
+        // Guardar tokens
         localStorage.setItem("access", access);
         localStorage.setItem("refresh", refresh);
 
@@ -210,10 +219,19 @@ const App: React.FC = () => {
 
         axios.defaults.headers.common["Authorization"] = `Bearer ${access}`;
 
-        window.location.reload();
+        window.location.reload(); // 🔁 recargar la app
         return true;
-      } catch (err) {
+      } catch (err: any) {
         console.error("❌ Error login:", err);
+
+        const msg =
+          err.response?.data?.detail ||
+          err.response?.data?.error ||
+          err.response?.data?.message ||
+          "Credenciales inválidas.";
+
+        setLastError(msg);
+
         return false;
       }
     },
@@ -240,19 +258,16 @@ const App: React.FC = () => {
 
         let backendError = "Error desconocido";
 
-        // errores típicos del backend Django
-        if (err.response?.data?.username) {
+        if (err.response?.data?.username)
           backendError = err.response.data.username[0];
-        } else if (err.response?.data?.email) {
+        else if (err.response?.data?.email)
           backendError = err.response.data.email[0];
-        } else if (err.response?.data?.error) {
+        else if (err.response?.data?.error)
           backendError = err.response.data.error;
-        }
 
         return { success: false, error: backendError };
       }
     },
-
 
     // ---------------------------
     logout: () => {
@@ -270,16 +285,16 @@ const App: React.FC = () => {
       setView("login");
     },
 
-    // ---------------------------
-    // FUNCIONES REQUERIDAS POR EL TYPE
-    // ---------------------------
+    // ----------------------------------------------------
+    // Requeridos por tipos (no se usan aquí)
+    // ----------------------------------------------------
     loginStudent: () => false,
     registerStudent: () => false,
     linkStudentAccount: async () => false,
 
-    // ---------------------------
-    // Progreso (estudiante)
-    // ---------------------------
+    // ----------------------------------------------------
+    // Progreso de estudiante
+    // ----------------------------------------------------
     completeLesson: async (lesson, perf) => {
       await axios.post("http://127.0.0.1:8000/api/progress/update/", {
         lesson_id: lesson.id,

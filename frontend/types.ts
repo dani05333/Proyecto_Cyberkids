@@ -4,7 +4,7 @@
 export enum AgeGroup {
   KID = "KID",
   TWEEN = "TWEEN",
-  TEEN = "TEEN"
+  TEEN = "TEEN",
 }
 
 // --------------------------------------------------------
@@ -45,10 +45,10 @@ export interface User {
 
   name?: string;
 
-  // 🔥 AgeGroup vuelve a su formato original (KID/TWEEN/TEEN)
-  ageGroup?: AgeGroup;
+  // 🔥 Grupo etario (KID/TWEEN/TEEN)
+  ageGroup?: AgeGroup | null;
 
-  // 🔥 Tu edad REAL (6-9, 10-13, 14-17) SIGUE EXISTIENDO
+  // 🔥 Edad real (solo registro / info)
   age?: string | number | null;
 
   xp: number;
@@ -131,18 +131,22 @@ export interface Badge {
 }
 
 // --------------------------------------------------------
+// VISTAS
+// --------------------------------------------------------
+export type ViewType =
+  | "login"
+  | "age-selector"
+  | "dashboard"
+  | "parent-home"
+  | "school-dashboard"
+  | "register-student";
+
+// --------------------------------------------------------
 // CONTEXTO GLOBAL
 // --------------------------------------------------------
 export interface AppContextType {
-  view:
-    | "login"
-    | "age-selector"
-    | "dashboard"
-    | "parent-home"
-    | "school-dashboard"
-    | "register-student";
-
-  setView: (view: AppContextType["view"]) => void;
+  view: ViewType;
+  setView: (view: ViewType) => void;
 
   user: User | null;
   loggedInAccount: Account | null;
@@ -151,32 +155,41 @@ export interface AppContextType {
   accessToken: string | null;
   refreshToken: string | null;
 
+  // 🔥 Nuevo: manejo de errores globales
+  lastError: string | null;
+  clearError: () => void;
+
+  // Login unificado
   login: (
     emailOrUsername: string,
     password: string,
     expectedRole?: string | null
   ) => Promise<boolean>;
 
- register: (
-  name: string,
-  age: number,
-  email: string,
-  password: string,
-  role: string
-) => Promise<{ success: boolean; error: string | null }>;
+  // Registro
+  register: (
+    name: string,
+    age: number,
+    email: string,
+    password: string,
+    role: string
+  ) => Promise<{ success: boolean; error: string | null }>;
 
-
+  // Legacy (aún definidos por compatibilidad)
   loginStudent: (name: string) => boolean;
   registerStudent: (name: string, ageGroup: AgeGroup) => boolean;
 
   logout: () => void;
 
+  // Progreso del estudiante
   completeLesson: (lesson: Lesson, performance: Performance) => void;
 
   updateUser: (updatedUser: User) => void;
 
+  // Relación apoderado → estudiante
   linkStudentAccount: (studentName: string) => Promise<boolean>;
 
+  // Premium
   isPremiumModalOpen: boolean;
   openPremiumModal: () => void;
   closePremiumModal: () => void;

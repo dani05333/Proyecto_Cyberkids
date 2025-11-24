@@ -2,14 +2,29 @@ import React, { useState, useContext } from "react";
 import { AppContext } from "../App";
 import { AppContextType } from "../types";
 import StudentLogin from "./StudentLogin";
+import VerifyEmail from "./VerifyEmail"; // ⬅️ Import necesario
 
 const Login: React.FC<{
   setView: (view: AppContextType["view"]) => void;
   initialTab?: "student" | "parent" | "school";
 }> = ({ setView, initialTab = "student" }) => {
-  const [activeTab, setActiveTab] = useState<
-    "student" | "parent" | "school"
-  >(initialTab);
+  const [activeTab, setActiveTab] = useState<"student" | "parent" | "school">(initialTab);
+
+  // Flag para activar pantalla de verificación
+  const [needsVerify, setNeedsVerify] = useState(false);
+  const [emailToVerify, setEmailToVerify] = useState("");
+
+  // Si el usuario necesita verificar → mostrar VerifyEmail
+  if (needsVerify) {
+    return (
+      <VerifyEmail
+        onVerified={() => {
+          setNeedsVerify(false);
+          alert("Correo verificado correctamente. Ahora puedes iniciar sesión.");
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4">
@@ -65,7 +80,11 @@ const Login: React.FC<{
           {activeTab === "student" && <StudentLogin setView={setView} />}
 
           {(activeTab === "parent" || activeTab === "school") && (
-            <AdultLoginForm profileType={activeTab} />
+            <AdultLoginForm
+              profileType={activeTab}
+              setNeedsVerify={setNeedsVerify}
+              setEmailToVerify={setEmailToVerify}
+            />
           )}
         </div>
       </div>
@@ -74,11 +93,13 @@ const Login: React.FC<{
 };
 
 // --------------------------------------------------------
-// 🔹 FORMULARIO DE APODERADO / COLEGIO (CON OJITO)
+// 🔹 FORMULARIO DE ADULTOS (login + registro)
 // --------------------------------------------------------
-const AdultLoginForm: React.FC<{ profileType: "parent" | "school" }> = ({
-  profileType,
-}) => {
+const AdultLoginForm: React.FC<{
+  profileType: "parent" | "school";
+  setNeedsVerify: (v: boolean) => void;
+  setEmailToVerify: (v: string) => void;
+}> = ({ profileType, setNeedsVerify, setEmailToVerify }) => {
   const context = useContext(AppContext) as AppContextType;
 
   const [isRegistering, setIsRegistering] = useState(false);
@@ -90,21 +111,17 @@ const AdultLoginForm: React.FC<{ profileType: "parent" | "school" }> = ({
 
   const [showPassword, setShowPassword] = useState(false);
 
-  // --------------------------------------------------------
-  // 🔐 VALIDACIÓN DE CONTRASEÑA SEGURA
-  // --------------------------------------------------------
   const isSecurePassword = (pass: string) => {
     const hasMinLength = pass.length >= 8;
     const hasUpper = /[A-Z]/.test(pass);
     const hasLower = /[a-z]/.test(pass);
     const hasNumber = /[0-9]/.test(pass);
     const hasSymbol = /[!@#$%^&*?.\-_+=\/\\()[\]{};,:\|]/.test(pass);
-
     return hasMinLength && hasUpper && hasLower && hasNumber && hasSymbol;
   };
 
   // --------------------------------------------------------
-  // SUBMIT DEL FORMULARIO
+  // SUBMIT
   // --------------------------------------------------------
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,7 +138,7 @@ const AdultLoginForm: React.FC<{ profileType: "parent" | "school" }> = ({
 
       if (!isSecurePassword(password)) {
         setError(
-          "La contraseña debe tener 8 caracteres, mayúscula, minúscula, número y símbolo."
+          "La contraseña debe tener 8 caracteres, con mayúscula, minúscula, número y símbolo."
         );
         return;
       }
@@ -139,29 +156,27 @@ const AdultLoginForm: React.FC<{ profileType: "parent" | "school" }> = ({
         return;
       }
 
-      const loggedIn = await context.login(username, password, profileType);
-
-      if (!loggedIn) {
-        setError(
-          "El usuario se registró correctamente, pero hubo un problema iniciando sesión."
-        );
-        return;
-      }
-
+      // ← Envío directo a verificación de correo
+      setNeedsVerify(true);
+      setEmailToVerify(email);
       return;
     }
 
-    // LOGIN
+    // LOGIN NORMAL
     const success = await context.login(username || email, password);
 
     if (!success) {
+      // Detectar el mensaje del backend:
+      if (context.lastError?.includes("Debes verificar tu correo")) {
+        setNeedsVerify(true);
+        setEmailToVerify(email || username);
+        return;
+      }
+
       setError("Usuario/correo o contraseña incorrectos.");
     }
   };
 
-  // --------------------------------------------------------
-  // FORMULARIO
-  // --------------------------------------------------------
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <h2 className="text-2xl font-bold text-slate-800 text-center">
@@ -199,7 +214,6 @@ const AdultLoginForm: React.FC<{ profileType: "parent" | "school" }> = ({
         </>
       )}
 
-      {/* CONTRASEÑA CON OJITO */}
       <PasswordInput
         id="password"
         label="Contraseña"
@@ -233,20 +247,14 @@ const AdultLoginForm: React.FC<{ profileType: "parent" | "school" }> = ({
 };
 
 // --------------------------------------------------------
-// 🔹 INPUT REUTILIZABLE (TEXTOS NORMALES)
+// INPUTS
 // --------------------------------------------------------
-const AuthInput: React.FC<{
-  id: string;
-  type: string;
-  label: string;
-  value: string;
-  onChange: (val: string) => void;
-  required?: boolean;
-}> = ({ id, type, label, value, onChange, required }) => (
+const AuthInput: React.FC<any> = ({ id, type, label, value, onChange, required }) => (
   <div>
     <label htmlFor={id} className="block text-sm font-medium text-slate-700">
       {label}
     </label>
+
     <input
       id={id}
       type={type}
@@ -258,23 +266,13 @@ const AuthInput: React.FC<{
   </div>
 );
 
-// --------------------------------------------------------
-// 🔹 INPUT DE CONTRASEÑA CON OJITO
-// --------------------------------------------------------
-const PasswordInput: React.FC<{
-  id: string;
-  label: string;
-  value: string;
-  onChange: (val: string) => void;
-  show: boolean;
-  setShow: (val: boolean) => void;
-}> = ({ id, label, value, onChange, show, setShow }) => (
+const PasswordInput: React.FC<any> = ({ id, label, value, onChange, show, setShow }) => (
   <div>
     <label htmlFor={id} className="block text-sm font-medium text-slate-700">
       {label}
     </label>
 
-    <div className="flex items-center border px-3 py-2 rounded-md">
+    <div className="flex items-center border px-3 py-2 rounded-md bg-white">
       <input
         id={id}
         type={show ? "text" : "password"}
