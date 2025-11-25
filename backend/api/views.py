@@ -480,3 +480,55 @@ def get_child_progress_for_parent(request, child_id):
         "age": child.age,
         "progress": progress_serializer.data,
     })
+
+# ========================================================
+# 🟥 ADMIN — LISTAR TODOS LOS USUARIOS
+# ========================================================
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_list_users(request):
+    # solo admins
+    if request.user.role != "admin":
+        return Response({"error": "No autorizado"}, status=403)
+
+    # query params
+    only_active = request.query_params.get("only_active", "true").lower() == "true"
+    page = int(request.query_params.get("page", 1))
+    page_size = int(request.query_params.get("page_size", 20))
+
+    qs = CustomUser.objects.all().order_by("-date_joined")
+
+    if only_active:
+        qs = qs.filter(is_archived=False)
+
+    total = qs.count()
+    start = (page - 1) * page_size
+    end = start + page_size
+    qs = qs[start:end]
+
+    data = [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role,
+            "age": u.age,
+            "age_group": u.age_group,
+            "linked_student_username": (
+                u.linked_student.username if u.linked_student else None
+            ),
+            "is_archived": u.is_archived,
+            "date_joined": u.date_joined,
+            "last_login": u.last_login,
+        }
+        for u in qs
+    ]
+
+    return Response(
+        {
+            "results": data,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+        }
+    )

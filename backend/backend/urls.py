@@ -17,6 +17,7 @@ from api.views import (
     verify_email,              # verificación
     get_child_progress_for_parent,
     archive_child,             # 👈 NUEVO IMPORTANTE
+    admin_list_users,
 )
 
 urlpatterns = [
@@ -77,4 +78,8 @@ urlpatterns = [
         archive_child,
         name="archive_child"
     ),
+    
+    # 🟥 Admin
+    path("api/admin/users/", admin_list_users, name="admin_list_users"),
+
 ]
