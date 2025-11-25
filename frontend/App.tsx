@@ -1,5 +1,5 @@
-// ----------------------------------------------------
-// App.tsx (VERSIÓN FINAL — con verificación por correo)
+// ---------------------------------------------------- 
+// App.tsx (VERSIÓN CON ADMIN)
 // ----------------------------------------------------
 import React, { useState, createContext, useEffect } from "react";
 import axios from "axios";
@@ -17,6 +17,7 @@ import Dashboard from "./components/Dashboard";
 import ParentHome from "./components/ParentHome";
 import SchoolDashboard from "./components/SchoolDashboard";
 import AgeSelectorPage from "./components/AgeSelectorPage";
+import AdminDashboard from "./components/AdminDashboard"; // 👈 NUEVO
 
 import FeedbackButton from "./components/FeedbackButton";
 import PremiumModal from "./components/PremiumModal";
@@ -44,7 +45,7 @@ const App: React.FC = () => {
 
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
 
-  // Nuevo: guarda errores del backend para Login.tsx
+  // Errores del backend para login
   const [lastError, setLastError] = useState<string | null>(null);
 
   // ----------------------------------------------------
@@ -60,7 +61,7 @@ const App: React.FC = () => {
         const meRes = await axios.get("http://127.0.0.1:8000/api/me/");
         const me = meRes.data;
 
-        const role = me.role;
+        const role = me.role as User["role"];
 
         // -----------------------------
         // Estudiante
@@ -117,7 +118,7 @@ const App: React.FC = () => {
         }
 
         // -----------------------------
-        // Apoderado / Colegio
+        // Apoderado / Colegio / Admin
         // -----------------------------
         else {
           setUser({
@@ -155,7 +156,7 @@ const App: React.FC = () => {
   }, [accessToken]);
 
   // ----------------------------------------------------
-  // Cambiar vista al loguear
+  // Cambiar vista al loguear según rol
   // ----------------------------------------------------
   useEffect(() => {
     if (!user) return;
@@ -163,20 +164,18 @@ const App: React.FC = () => {
     if (user.role === "student") {
       if (!user.ageGroup) setView("age-selector");
       else setView("dashboard");
-    }
-
-    if (user.role === "parent") {
+    } else if (user.role === "parent") {
       setView("parent-home");
-    }
-
-    if (user.role === "school") {
+    } else if (user.role === "school") {
       setView("school-dashboard");
+    } else if (user.role === "admin") {
+      setView("admin-dashboard"); // 👈 NUEVA VISTA
     }
-  }, [user]);
+  }, [user, setView]);
 
   // ----------------------------------------------------
-  // CONTEXTO GLOBAL (💯 COMPLETO + lastError)
-  // ----------------------------------------------------
+  // CONTEXTO GLOBAL (incluye lastError)
+// ----------------------------------------------------
   const contextValue: AppContextType = {
     view,
     setView,
@@ -184,8 +183,7 @@ const App: React.FC = () => {
     user,
     loggedInAccount,
 
-    // FALTABAN ESTOS 2 ✔
-    linkedStudent: null,
+    linkedStudent: null, // según tu types.ts, lo mantienes así
     lastError,
     clearError: () => setLastError(null),
 
@@ -193,7 +191,6 @@ const App: React.FC = () => {
     refreshToken,
 
     isPremiumModalOpen,
-
 
     // ---------------------------
     // LOGIN
@@ -219,7 +216,7 @@ const App: React.FC = () => {
 
         axios.defaults.headers.common["Authorization"] = `Bearer ${access}`;
 
-        window.location.reload(); // 🔁 recargar la app
+        window.location.reload(); // 🔁 recargar la app para restaurar sesión
         return true;
       } catch (err: any) {
         console.error("❌ Error login:", err);
@@ -270,6 +267,8 @@ const App: React.FC = () => {
     },
 
     // ---------------------------
+    // LOGOUT
+    // ---------------------------
     logout: () => {
       localStorage.removeItem("access");
       localStorage.removeItem("refresh");
@@ -286,7 +285,7 @@ const App: React.FC = () => {
     },
 
     // ----------------------------------------------------
-    // Requeridos por tipos (no se usan aquí)
+    // Requeridos por tipos (stubs)
     // ----------------------------------------------------
     loginStudent: () => false,
     registerStudent: () => false,
@@ -342,6 +341,9 @@ const App: React.FC = () => {
 
       case "school-dashboard":
         return <SchoolDashboard />;
+
+      case "admin-dashboard":
+        return <AdminDashboard />; // 👈 NUEVA VISTA
 
       case "age-selector":
         return <AgeSelectorPage username={user?.name || ""} setView={setView} />;

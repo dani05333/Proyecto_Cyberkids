@@ -14,10 +14,11 @@ export enum ProfileType {
   STUDENT = "student",
   PARENT = "parent",
   SCHOOL = "school",
+  ADMIN = "admin", // 👈 NUEVO
 }
 
 // --------------------------------------------------------
-// Interfaces
+// Interfaces auxiliares
 // --------------------------------------------------------
 export interface Performance {
   score: number;
@@ -40,9 +41,13 @@ export interface User {
 
   username?: string;
   email?: string;
-  role?: "student" | "parent" | "school";
+
+  // 👇 ahora incluye admin
+  role?: "student" | "parent" | "school" | "admin";
+
   linked_parent?: string | null;
 
+  // nombre mostrado en frontend
   name?: string;
 
   // 🔥 Grupo etario (KID/TWEEN/TEEN)
@@ -65,7 +70,10 @@ export interface User {
 export interface Account {
   name: string;
   email: string;
-  profileType: "parent" | "school" | "student";
+
+  // 👇 ahora también puede ser admin
+  profileType: "parent" | "school" | "student" | "admin";
+
   linkedStudentName?: string;
 }
 
@@ -139,6 +147,7 @@ export type ViewType =
   | "dashboard"
   | "parent-home"
   | "school-dashboard"
+  | "admin-dashboard"   // 👈 NUEVA VISTA ADMIN
   | "register-student";
 
 // --------------------------------------------------------
@@ -155,7 +164,7 @@ export interface AppContextType {
   accessToken: string | null;
   refreshToken: string | null;
 
-  // 🔥 Nuevo: manejo de errores globales
+  // 🔥 Manejo de errores globales
   lastError: string | null;
   clearError: () => void;
 
@@ -175,7 +184,7 @@ export interface AppContextType {
     role: string
   ) => Promise<{ success: boolean; error: string | null }>;
 
-  // Legacy (aún definidos por compatibilidad)
+  // Legacy (compatibilidad)
   loginStudent: (name: string) => boolean;
   registerStudent: (name: string, ageGroup: AgeGroup) => boolean;
 

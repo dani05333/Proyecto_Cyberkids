@@ -2,22 +2,24 @@ import React, { useState, useContext } from "react";
 import { AppContext } from "../App";
 import { AppContextType } from "../types";
 import StudentLogin from "./StudentLogin";
-import VerifyEmail from "./VerifyEmail"; // ⬅️ Import necesario
+import VerifyEmail from "./VerifyEmail";
 
 const Login: React.FC<{
   setView: (view: AppContextType["view"]) => void;
-  initialTab?: "student" | "parent" | "school";
+  initialTab?: "student" | "parent" | "school" | "admin";
 }> = ({ setView, initialTab = "student" }) => {
-  const [activeTab, setActiveTab] = useState<"student" | "parent" | "school">(initialTab);
+  const [activeTab, setActiveTab] = useState<
+    "student" | "parent" | "school" | "admin"
+  >(initialTab);
 
-  // Flag para activar pantalla de verificación
+  // pantalla de verificación
   const [needsVerify, setNeedsVerify] = useState(false);
   const [emailToVerify, setEmailToVerify] = useState("");
 
-  // Si el usuario necesita verificar → mostrar VerifyEmail
   if (needsVerify) {
     return (
       <VerifyEmail
+        email={emailToVerify}
         onVerified={() => {
           setNeedsVerify(false);
           alert("Correo verificado correctamente. Ahora puedes iniciar sesión.");
@@ -32,54 +34,49 @@ const Login: React.FC<{
         <h1 className="text-5xl md:text-6xl font-extrabold text-slate-800">
           Bienvenid@ a <span className="text-sky-500">CyberKids Chile</span>
         </h1>
-        <p className="text-slate-600 text-lg mt-4 max-w-2xl">
+        <p className="text-slate-600 text-lg mt-4 max-w-2xl mx-auto">
           Tu aventura para convertirte en un Guardián Cibernético comienza aquí.
         </p>
       </header>
 
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
+      {/* TARJETA PRINCIPAL */}
+      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl p-8">
+        {/* TABS */}
         <div className="mb-6 border-b border-slate-200">
-          <nav className="-mb-px flex space-x-6" aria-label="Tabs">
-            <button
+          <nav
+            className="-mb-px flex justify-center space-x-4"
+            aria-label="Tabs"
+          >
+            <Tab
+              label="Soy Estudiante"
+              active={activeTab === "student"}
               onClick={() => setActiveTab("student")}
-              className={`${
-                activeTab === "student"
-                  ? "border-sky-500 text-sky-600"
-                  : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
-              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-            >
-              Soy Estudiante
-            </button>
-
-            <button
+            />
+            <Tab
+              label="Soy Apoderado"
+              active={activeTab === "parent"}
               onClick={() => setActiveTab("parent")}
-              className={`${
-                activeTab === "parent"
-                  ? "border-sky-500 text-sky-600"
-                  : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
-              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-            >
-              Soy Apoderado
-            </button>
-
-            <button
+            />
+            <Tab
+              label="Soy del Colegio"
+              active={activeTab === "school"}
               onClick={() => setActiveTab("school")}
-              className={`${
-                activeTab === "school"
-                  ? "border-sky-500 text-sky-600"
-                  : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
-              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-            >
-              Soy del Colegio
-            </button>
+            />
+            <Tab
+              label="Soy Administrador"
+              active={activeTab === "admin"}
+              onClick={() => setActiveTab("admin")}
+            />
           </nav>
         </div>
 
         {/* VISTAS */}
-        <div>
+        <div className="max-w-md mx-auto">
           {activeTab === "student" && <StudentLogin setView={setView} />}
 
-          {(activeTab === "parent" || activeTab === "school") && (
+          {(activeTab === "parent" ||
+            activeTab === "school" ||
+            activeTab === "admin") && (
             <AdultLoginForm
               profileType={activeTab}
               setNeedsVerify={setNeedsVerify}
@@ -92,15 +89,38 @@ const Login: React.FC<{
   );
 };
 
-// --------------------------------------------------------
-// 🔹 FORMULARIO DE ADULTOS (login + registro)
-// --------------------------------------------------------
+// -----------------------------------------------------------------
+// 🔹 TAB BUTTON REUTILIZABLE
+// -----------------------------------------------------------------
+const Tab: React.FC<{
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}> = ({ label, active, onClick }) => (
+  <button
+    onClick={onClick}
+    className={`${
+      active
+        ? "border-sky-500 text-sky-600"
+        : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+    } whitespace-nowrap py-4 px-2 border-b-2 font-medium text-sm`}
+  >
+    {label}
+  </button>
+);
+
+// -----------------------------------------------------------------
+// 🔹 FORMULARIO ADULTOS (apoderado, colegio, admin)
+// -----------------------------------------------------------------
 const AdultLoginForm: React.FC<{
-  profileType: "parent" | "school";
+  profileType: "parent" | "school" | "admin";
   setNeedsVerify: (v: boolean) => void;
   setEmailToVerify: (v: string) => void;
 }> = ({ profileType, setNeedsVerify, setEmailToVerify }) => {
   const context = useContext(AppContext) as AppContextType;
+
+  // si es admin → NO puede registrarse
+  const isAdmin = profileType === "admin";
 
   const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState("");
@@ -108,7 +128,6 @@ const AdultLoginForm: React.FC<{
   const [password, setPassword] = useState("");
   const [age, setAge] = useState("");
   const [error, setError] = useState("");
-
   const [showPassword, setShowPassword] = useState(false);
 
   const isSecurePassword = (pass: string) => {
@@ -120,15 +139,12 @@ const AdultLoginForm: React.FC<{
     return hasMinLength && hasUpper && hasLower && hasNumber && hasSymbol;
   };
 
-  // --------------------------------------------------------
-  // SUBMIT
-  // --------------------------------------------------------
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    // REGISTRO
-    if (isRegistering) {
+    // REGISTRO (solo parent y school)
+    if (isRegistering && !isAdmin) {
       const parsedAge = parseInt(age);
 
       if (isNaN(parsedAge) || parsedAge < 18) {
@@ -156,23 +172,24 @@ const AdultLoginForm: React.FC<{
         return;
       }
 
-      // ← Envío directo a verificación de correo
       setNeedsVerify(true);
       setEmailToVerify(email);
       return;
     }
 
-    // LOGIN NORMAL
-    const success = await context.login(username || email, password);
+    // LOGIN (enviando el rol esperado)
+    const success = await context.login(
+      username || email,
+      password,
+      profileType
+    );
 
     if (!success) {
-      // Detectar el mensaje del backend:
       if (context.lastError?.includes("Debes verificar tu correo")) {
         setNeedsVerify(true);
         setEmailToVerify(email || username);
         return;
       }
-
       setError("Usuario/correo o contraseña incorrectos.");
     }
   };
@@ -192,7 +209,8 @@ const AdultLoginForm: React.FC<{
         required
       />
 
-      {isRegistering && (
+      {/* Campos solo para registro (NO admin) */}
+      {isRegistering && !isAdmin && (
         <>
           <AuthInput
             id="email"
@@ -232,24 +250,34 @@ const AdultLoginForm: React.FC<{
         {isRegistering ? "Registrarse" : "Ingresar"}
       </button>
 
-      <p className="text-center text-sm">
-        {isRegistering ? "¿Ya tienes cuenta?" : "¿No tienes cuenta?"}
-        <button
-          type="button"
-          onClick={() => setIsRegistering(!isRegistering)}
-          className="font-semibold text-sky-600 hover:underline ml-1"
-        >
-          {isRegistering ? "Inicia Sesión" : "Regístrate"}
-        </button>
-      </p>
+      {/* SI ES ADMIN NO SE MUESTRA EL BOTÓN DE REGISTRO */}
+      {!isAdmin && (
+        <p className="text-center text-sm">
+          {isRegistering ? "¿Ya tienes cuenta?" : "¿No tienes cuenta?"}
+          <button
+            type="button"
+            onClick={() => setIsRegistering(!isRegistering)}
+            className="font-semibold text-sky-600 hover:underline ml-1"
+          >
+            {isRegistering ? "Inicia Sesión" : "Regístrate"}
+          </button>
+        </p>
+      )}
     </form>
   );
 };
 
 // --------------------------------------------------------
-// INPUTS
+// INPUT REUTILIZABLE
 // --------------------------------------------------------
-const AuthInput: React.FC<any> = ({ id, type, label, value, onChange, required }) => (
+const AuthInput: React.FC<any> = ({
+  id,
+  type,
+  label,
+  value,
+  onChange,
+  required,
+}) => (
   <div>
     <label htmlFor={id} className="block text-sm font-medium text-slate-700">
       {label}
@@ -266,7 +294,17 @@ const AuthInput: React.FC<any> = ({ id, type, label, value, onChange, required }
   </div>
 );
 
-const PasswordInput: React.FC<any> = ({ id, label, value, onChange, show, setShow }) => (
+// --------------------------------------------------------
+// INPUT PASSWORD
+// --------------------------------------------------------
+const PasswordInput: React.FC<any> = ({
+  id,
+  label,
+  value,
+  onChange,
+  show,
+  setShow,
+}) => (
   <div>
     <label htmlFor={id} className="block text-sm font-medium text-slate-700">
       {label}
