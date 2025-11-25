@@ -1,4 +1,3 @@
-// src/components/AdminDashboard.tsx
 import React, { useContext, useEffect, useState } from "react";
 import axios from "axios";
 import { AppContext } from "../App";
@@ -10,7 +9,7 @@ interface AdminUser {
   id: number;
   username: string;
   email: string;
-  role: "student" | "parent" | "school" | "admin";
+  role: "student" | "parent" | "school" | "admin" | "teacher"; // por si el backend usa "teacher"
   age?: number | null;
   age_group?: AgeGroup | null;
   linked_student_username?: string | null;
@@ -37,7 +36,7 @@ const AdminDashboard: React.FC = () => {
 
   // filtros
   const [roleFilter, setRoleFilter] = useState<
-    "all" | "student" | "parent" | "school" | "admin"
+    "all" | "student" | "parent" | "school" | "admin" | "teacher"
   >("all");
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -46,36 +45,48 @@ const AdminDashboard: React.FC = () => {
   const [pageSize] = useState(10);
   const [total, setTotal] = useState(0);
 
+  // ---------- estado para CRUD ----------
+  const [formMode, setFormMode] = useState<"create" | "edit">("create");
+  const [showForm, setShowForm] = useState(false);
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+
+  const [formUsername, setFormUsername] = useState("");
+  const [formPassword, setFormPassword] = useState("");
+  const [formRole, setFormRole] = useState<AdminUser["role"]>("student");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formLoading, setFormLoading] = useState(false);
+
   // ----------------- Cargar usuarios -----------------
+  const fetchUsers = async () => {
+    setLoading(true);
+    setLoadError(null);
+
+    try {
+      const res = await axios.get(`${API}/admin/users/`, {
+        params: {
+          page,
+          page_size: pageSize,
+          // siempre pedimos TODOS (archivados y activos)
+          only_active: "false",
+        },
+      });
+
+      const { results, total: totalCount } = res.data;
+      setUsers(results || []);
+      setTotal(totalCount ?? 0);
+    } catch (err) {
+      console.error("Error cargando usuarios para admin:", err);
+      setLoadError(
+        "No se pudo cargar la lista de usuarios. Intenta nuevamente más tarde."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchUsers = async () => {
-      setLoading(true);
-      setLoadError(null);
-
-      try {
-        const res = await axios.get(`${API}/admin/users/`, {
-          params: {
-            page,
-            page_size: pageSize,
-            // 👈 siempre pedimos TODOS (archivados y activos)
-            only_active: "false",
-          },
-        });
-
-        const { results, total: totalCount } = res.data;
-        setUsers(results || []);
-        setTotal(totalCount ?? 0);
-      } catch (err) {
-        console.error("Error cargando usuarios para admin:", err);
-        setLoadError(
-          "No se pudo cargar la lista de usuarios. Intenta nuevamente más tarde."
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -92,6 +103,85 @@ const AdminDashboard: React.FC = () => {
     );
   });
 
+  // ---------- helpers CRUD ----------
+  const resetForm = () => {
+    setFormUsername("");
+    setFormPassword("");
+    setFormRole("student");
+    setFormError(null);
+    setEditingUser(null);
+  };
+
+  const openCreateForm = () => {
+    setFormMode("create");
+    resetForm();
+    setShowForm(true);
+  };
+
+  const openEditForm = (user: AdminUser) => {
+    setFormMode("edit");
+    setEditingUser(user);
+    setFormUsername(user.username);
+    setFormPassword(""); // contraseña vacía: solo se cambia si se escribe
+    setFormRole(user.role);
+    setFormError(null);
+    setShowForm(true);
+  };
+
+  const handleSubmitForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    setFormLoading(true);
+
+    try {
+      if (formMode === "create") {
+        // CREATE: POST /api/admin/users/
+        await axios.post(`${API}/admin/users/`, {
+          username: formUsername,
+          password: formPassword,
+          role: formRole,
+        });
+      } else if (editingUser) {
+        // EDIT: PATCH /api/admin/users/<id>/
+        const body: any = {
+          username: formUsername,
+          role: formRole,
+        };
+        if (formPassword.trim()) {
+          body.password = formPassword;
+        }
+
+        await axios.patch(`${API}/admin/users/${editingUser.id}/`, body);
+      }
+
+      // recargar lista
+      await fetchUsers();
+      setShowForm(false);
+      resetForm();
+    } catch (err: any) {
+      console.error("Error guardando usuario:", err);
+      const msg =
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "No se pudo guardar el usuario.";
+      setFormError(msg);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const toggleArchive = async (u: AdminUser) => {
+    try {
+      await axios.patch(`${API}/admin/users/${u.id}/`, {
+        is_archived: !u.is_archived,
+      });
+      fetchUsers();
+    } catch (err) {
+      console.error("Error al archivar/activar usuario:", err);
+      alert("No se pudo actualizar el estado del usuario.");
+    }
+  };
+
   // ----------------- Render sección Usuarios -----------------
   const renderUsersSection = () => {
     return (
@@ -103,7 +193,7 @@ const AdminDashboard: React.FC = () => {
               Gestión de usuarios
             </h2>
             <p className="text-sm text-slate-600">
-              Revisa y administra todas las cuentas creadas en CyberKids Chile.
+              Revisa, crea y administra todas las cuentas de CyberKids Chile.
             </p>
           </div>
 
@@ -122,7 +212,7 @@ const AdminDashboard: React.FC = () => {
                 <option value="all">Todos</option>
                 <option value="student">Estudiantes</option>
                 <option value="parent">Apoderados</option>
-                <option value="school">Colegios</option>
+                <option value="school">Colegios / Docentes</option>
                 <option value="admin">Administradores</option>
               </select>
             </div>
@@ -139,8 +229,105 @@ const AdminDashboard: React.FC = () => {
                 className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 bg-white"
               />
             </div>
+
+            <button
+              type="button"
+              onClick={openCreateForm}
+              className="mt-2 md:mt-0 inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-semibold bg-sky-500 text-white hover:bg-sky-600 transition"
+            >
+              + Nuevo usuario
+            </button>
           </div>
         </div>
+
+        {/* Formulario crear/editar */}
+        {showForm && (
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">
+              {formMode === "create"
+                ? "Crear nuevo usuario"
+                : `Editar usuario: ${editingUser?.username}`}
+            </h3>
+
+            <form
+              onSubmit={handleSubmitForm}
+              className="flex flex-col md:flex-row gap-3 md:items-end"
+            >
+              <div className="flex-1">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Nombre de usuario
+                </label>
+                <input
+                  type="text"
+                  value={formUsername}
+                  onChange={(e) => setFormUsername(e.target.value)}
+                  required
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 bg-white"
+                />
+              </div>
+
+              <div className="flex-1">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Rol
+                </label>
+                <select
+                  value={formRole}
+                  onChange={(e) =>
+                    setFormRole(e.target.value as AdminUser["role"])
+                  }
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 bg-white"
+                >
+                  <option value="student">Estudiante</option>
+                  <option value="parent">Apoderado</option>
+                  <option value="school">Docente / Colegio</option>
+                  <option value="admin">Administrador</option>
+                </select>
+              </div>
+
+              <div className="flex-1">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Contraseña
+                </label>
+                <input
+                  type="password"
+                  value={formPassword}
+                  onChange={(e) => setFormPassword(e.target.value)}
+                  placeholder={
+                    formMode === "edit"
+                      ? "Deja en blanco para no cambiarla"
+                      : ""
+                  }
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 bg-white"
+                  required={formMode === "create"}
+                />
+              </div>
+
+              <div className="flex gap-2 mt-2 md:mt-0">
+                <button
+                  type="submit"
+                  disabled={formLoading}
+                  className="px-4 py-2 rounded-full text-sm font-semibold bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-60"
+                >
+                  {formMode === "create" ? "Crear" : "Guardar"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForm(false);
+                    resetForm();
+                  }}
+                  className="px-4 py-2 rounded-full text-sm font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+
+            {formError && (
+              <p className="text-xs text-rose-600 mt-2">{formError}</p>
+            )}
+          </div>
+        )}
 
         {/* Estado de carga / error */}
         {loading && (
@@ -173,9 +360,7 @@ const AdminDashboard: React.FC = () => {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
                           Rol
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                          Correo
-                        </th>
+                        {/* Columna de correo eliminada */}
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
                           Grupo etario
                         </th>
@@ -187,6 +372,9 @@ const AdminDashboard: React.FC = () => {
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
                           Estado
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                          Acciones
                         </th>
                       </tr>
                     </thead>
@@ -216,15 +404,7 @@ const AdminDashboard: React.FC = () => {
                           <td className="px-4 py-3 align-top">
                             <RoleBadge role={u.role} />
                           </td>
-                          <td className="px-4 py-3 align-top">
-                            <span className="text-slate-700">{u.email}</span>
-                            {u.last_login && (
-                              <span className="block text-[11px] text-slate-500">
-                                Último acceso:{" "}
-                                {new Date(u.last_login).toLocaleDateString()}
-                              </span>
-                            )}
-                          </td>
+                          {/* Celda de correo eliminada */}
                           <td className="px-4 py-3 align-top">
                             <AgeGroupLabel ageGroup={u.age_group || null} />
                           </td>
@@ -246,10 +426,32 @@ const AdminDashboard: React.FC = () => {
                                 Archivado
                               </span>
                             ) : (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border-emerald-200">
                                 Activo
                               </span>
                             )}
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            <div className="flex flex-col gap-1 text-xs">
+                              <button
+                                type="button"
+                                onClick={() => openEditForm(u)}
+                                className="px-2 py-1 rounded-full border border-sky-300 text-sky-700 hover:bg-sky-50"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleArchive(u)}
+                                className={`px-2 py-1 rounded-full border ${
+                                  u.is_archived
+                                    ? "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                    : "border-rose-300 text-rose-700 hover:bg-rose-50"
+                                }`}
+                              >
+                                {u.is_archived ? "Activar" : "Archivar"}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -333,7 +535,7 @@ const AdminDashboard: React.FC = () => {
             <div className="w-10 h-10 rounded-2xl bg-sky-500 flex items-center justify-center text-2xl">
               🛡️
             </div>
-            <div>
+          <div>
               <h1 className="text-lg md:text-xl font-extrabold text-slate-800">
                 Panel del Administrador
               </h1>
@@ -464,7 +666,8 @@ const RoleBadge: React.FC<{ role: AdminUser["role"] }> = ({ role }) => {
       classes = "bg-emerald-50 text-emerald-700 border-emerald-200";
       break;
     case "school":
-      label = "Colegio";
+    case "teacher":
+      label = "Docente / Colegio";
       classes = "bg-amber-50 text-amber-700 border-amber-200";
       break;
     case "admin":
