@@ -55,6 +55,19 @@ def _generate_and_send_verification_code(user: CustomUser):
 
 
 # ========================================================
+# 🔐 HELPER: validar contraseña segura (reusa el serializer)
+# ========================================================
+def _validate_secure_password(password: str):
+    """
+    Reutiliza la misma lógica de validación que el registro
+    (UserRegisterSerializer.validate_password).
+    Lanza serializers.ValidationError si no cumple.
+    """
+    serializer = UserRegisterSerializer()
+    return serializer.validate_password(password)
+
+
+# ========================================================
 # 🟦 REGISTRO
 # ========================================================
 class RegisterView(generics.CreateAPIView):
@@ -204,8 +217,7 @@ def verify_email(request):
 
 
 # ========================================================
-# 🟦 OBTENER ESTUDIANTE POR USERNAME
-#   (Excluye alumnos archivados)
+# 🟦 OBTENER ESTUDIANTE POR USERNAME (no archivados)
 # ========================================================
 @api_view(['GET'])
 def get_student_by_username(request, username):
@@ -450,8 +462,7 @@ def archive_child(request):
 
 
 # ========================================================
-# 🟥 PADRES — PROGRESO ESPECÍFICO DE UN HIJO
-#   (ignora archivados)
+# 🟥 PADRES — PROGRESO ESPECÍFICO DE UN HIJO (no archivados)
 # ========================================================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -481,54 +492,181 @@ def get_child_progress_for_parent(request, child_id):
         "progress": progress_serializer.data,
     })
 
+
 # ========================================================
-# 🟥 ADMIN — LISTAR TODOS LOS USUARIOS
+# 🟥 ADMIN — LISTAR / CREAR USUARIOS
 # ========================================================
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def admin_list_users(request):
     # solo admins
     if request.user.role != "admin":
         return Response({"error": "No autorizado"}, status=403)
 
-    # query params
-    only_active = request.query_params.get("only_active", "true").lower() == "true"
-    page = int(request.query_params.get("page", 1))
-    page_size = int(request.query_params.get("page_size", 20))
+    # ---------------- GET: listar con paginación ----------------
+    if request.method == "GET":
+        only_active = request.query_params.get("only_active", "true").lower() == "true"
+        page = int(request.query_params.get("page", 1))
+        page_size = int(request.query_params.get("page_size", 20))
 
-    qs = CustomUser.objects.all().order_by("-date_joined")
+        qs = CustomUser.objects.all().order_by("-date_joined")
 
-    if only_active:
-        qs = qs.filter(is_archived=False)
+        if only_active:
+            qs = qs.filter(is_archived=False)
 
-    total = qs.count()
-    start = (page - 1) * page_size
-    end = start + page_size
-    qs = qs[start:end]
+        total = qs.count()
+        start = (page - 1) * page_size
+        end = start + page_size
+        qs = qs[start:end]
 
-    data = [
-        {
-            "id": u.id,
-            "username": u.username,
-            "email": u.email,
-            "role": u.role,
-            "age": u.age,
-            "age_group": u.age_group,
-            "linked_student_username": (
-                u.linked_student.username if u.linked_student else None
-            ),
-            "is_archived": u.is_archived,
-            "date_joined": u.date_joined,
-            "last_login": u.last_login,
-        }
-        for u in qs
-    ]
+        data = [
+            {
+                "id": u.id,
+                "username": u.username,
+                "email": u.email,
+                "role": u.role,
+                "age": u.age,
+                "age_group": u.age_group,
+                "linked_student_username": (
+                    u.linked_student.username if u.linked_student else None
+                ),
+                "is_archived": u.is_archived,
+                "date_joined": u.date_joined,
+                "last_login": u.last_login,
+            }
+            for u in qs
+        ]
 
-    return Response(
-        {
-            "results": data,
-            "page": page,
-            "page_size": page_size,
-            "total": total,
-        }
-    )
+        return Response(
+            {
+                "results": data,
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+            }
+        )
+
+    # ---------------- POST: crear usuario ----------------
+    if request.method == "POST":
+        username = request.data.get("username")
+        password = request.data.get("password")
+        role = request.data.get("role")
+        email = request.data.get("email")
+
+        if not username or not password or not role:
+            return Response(
+                {"error": "username, password y role son obligatorios."},
+                status=400,
+            )
+
+        if role not in ["student", "parent", "teacher", "admin"]:
+            return Response(
+                {"error": "Rol inválido. Usa student, parent, teacher o admin."},
+                status=400,
+            )
+
+        if CustomUser.objects.filter(username=username).exists():
+            return Response({"error": "Ese nombre de usuario ya existe."}, status=400)
+
+        # ⚠️ Validación de contraseña segura (misma que registro)
+        try:
+            _validate_secure_password(password)
+        except serializers.ValidationError as e:
+            # e.detail puede ser string o list
+            msg = str(e.detail if not isinstance(e.detail, list) else e.detail[0])
+            return Response({"error": msg}, status=400)
+
+        # Si no se envía email, generamos uno falso
+        if not email:
+            email = f"{username.lower()}@admin-created.cyberkids.local"
+
+        # Normalizamos email
+        email = email.lower().strip()
+
+        user = CustomUser.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+            role=role,
+        )
+
+        # Los usuarios creados por admin:
+        # - NO requieren verificación por correo forzosamente,
+        #   pero si quieres, podrías dejar email_verified=False.
+        # Aquí lo dejamos como no verificado por defecto.
+        user.email_verified = False
+        user.save(update_fields=["email_verified"])
+
+        return Response(
+            {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "role": user.role,
+                "is_archived": user.is_archived,
+            },
+            status=201,
+        )
+
+
+# ========================================================
+# 🟥 ADMIN — EDITAR / ARCHIVAR USUARIO
+# ========================================================
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def admin_update_user(request, user_id):
+    # solo admins
+    if request.user.role != "admin":
+        return Response({"error": "No autorizado"}, status=403)
+
+    try:
+        user = CustomUser.objects.get(id=user_id)
+    except CustomUser.DoesNotExist:
+        return Response({"error": "Usuario no encontrado."}, status=404)
+
+    new_username = request.data.get("username")
+    new_role = request.data.get("role")
+    new_password = request.data.get("password")
+    is_archived = request.data.get("is_archived", None)
+
+    # Cambiar username
+    if new_username:
+        if CustomUser.objects.filter(username=new_username).exclude(id=user.id).exists():
+            return Response({"error": "Ese nombre de usuario ya existe."}, status=400)
+        user.username = new_username
+
+    # Cambiar rol
+    if new_role:
+        if new_role not in ["student", "parent", "teacher", "admin"]:
+            return Response(
+                {"error": "Rol inválido. Usa student, parent, teacher o admin."},
+                status=400,
+            )
+        user.role = new_role
+
+    # Cambiar contraseña
+    if new_password:
+        try:
+            _validate_secure_password(new_password)
+        except serializers.ValidationError as e:
+            msg = str(e.detail if not isinstance(e.detail, list) else e.detail[0])
+            return Response({"error": msg}, status=400)
+
+        user.set_password(new_password)
+
+    # Archivar / desarchivar
+    if is_archived is not None:
+        # Se espera boolean o algo convertible
+        if isinstance(is_archived, str):
+            is_archived = is_archived.lower() == "true"
+        user.is_archived = bool(is_archived)
+
+    user.save()
+
+    return Response({
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+        "is_archived": user.is_archived,
+    })

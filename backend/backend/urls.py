@@ -13,11 +13,14 @@ from api.views import (
     list_children,
     create_child_api,
     update_child,
-    send_verification_code,    # verificación
-    verify_email,              # verificación
+    send_verification_code,
+    verify_email,
     get_child_progress_for_parent,
-    archive_child,             # 👈 NUEVO IMPORTANTE
+    archive_child,
+
+    # 🔴 ADMIN CRUD
     admin_list_users,
+    admin_update_user,
 )
 
 urlpatterns = [
@@ -67,19 +70,21 @@ urlpatterns = [
     path(
         "api/parent/children/<int:child_id>/progress/",
         get_child_progress_for_parent,
-        name="child_progress_for_parent"
+        name="child_progress_for_parent",
     ),
 
     # ---------------------------
-    # 🗑️ ARCHIVAR ALUMNO (SOFT DELETE)
+    # 🗑️ ARCHIVAR ALUMNO (soft delete)
     # ---------------------------
-    path(
-        "api/parent/archive-child/",
-        archive_child,
-        name="archive_child"
-    ),
-    
-    # 🟥 Admin
+    path("api/parent/archive-child/", archive_child, name="archive_child"),
+
+    # ---------------------------
+    # 🟥 ADMIN — CRUD COMPLETO
+    # ---------------------------
+
+    # Listar y crear usuarios
     path("api/admin/users/", admin_list_users, name="admin_list_users"),
 
+    # Editar, cambiar rol, archivar, activar, cambiar pass
+    path("api/admin/users/<int:user_id>/", admin_update_user, name="admin_update_user"),
 ]
