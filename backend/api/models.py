@@ -38,7 +38,7 @@ class CustomUser(AbstractUser):
         blank=True
     )
 
-    # Apoderado → Estudiante
+    # Relación apoderado → estudiante
     linked_student = models.ForeignKey(
         'self',
         null=True,
@@ -47,7 +47,7 @@ class CustomUser(AbstractUser):
         related_name='parent_link'
     )
 
-    # Para hijos creados automáticamente
+    # Bandera de cambio de contraseña (niños)
     password_changed_once = models.BooleanField(default=False)
 
     # ------------------------------------------------------------
@@ -57,12 +57,17 @@ class CustomUser(AbstractUser):
     verification_code = models.CharField(max_length=6, null=True, blank=True)
     verification_code_expires_at = models.DateTimeField(null=True, blank=True)
 
+    # ------------------------------------------------------------
+    # 🗑️ ARCHIVADO (Soft Delete)
+    # ------------------------------------------------------------
+    is_archived = models.BooleanField(default=False)
+
     def __str__(self):
         return f"{self.username} ({self.role})"
 
 
 # ------------------------------------------------------------
-# 📘 PROGRESO DE LECCIONES (1 sola vez)
+# 📘 PROGRESO DE LECCIONES (1 sola vez por lección)
 # ------------------------------------------------------------
 class LessonProgress(models.Model):
     user = models.ForeignKey(

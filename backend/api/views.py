@@ -85,7 +85,7 @@ class RegisterView(generics.CreateAPIView):
 
 
 # ========================================================
-# 🟦 LOGIN (con bloqueo por falta de verificación)
+# 🟦 LOGIN (con bloqueo por falta de verificación y archivado)
 # ========================================================
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
@@ -108,7 +108,13 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
         if not user.is_active:
             raise serializers.ValidationError("Cuenta inactiva.")
 
-        # ❗ Bloqueo si NO ha verificado
+        # 🚫 Bloqueo si el usuario fue archivado (soft delete)
+        if getattr(user, "is_archived", False):
+            raise serializers.ValidationError(
+                "Esta cuenta ha sido desactivada por el apoderado."
+            )
+
+        # ❗ Bloqueo si NO ha verificado (adultos)
         if user.role in ["parent", "teacher", "admin"] and not user.email_verified:
             raise serializers.ValidationError(
                 "Debes verificar tu correo antes de iniciar sesión."
@@ -199,11 +205,16 @@ def verify_email(request):
 
 # ========================================================
 # 🟦 OBTENER ESTUDIANTE POR USERNAME
+#   (Excluye alumnos archivados)
 # ========================================================
 @api_view(['GET'])
 def get_student_by_username(request, username):
     try:
-        student = CustomUser.objects.get(username=username, role="student")
+        student = CustomUser.objects.get(
+            username=username,
+            role="student",
+            is_archived=False
+        )
     except CustomUser.DoesNotExist:
         return Response({"error": "Estudiante no encontrado"}, status=404)
 
@@ -230,7 +241,11 @@ def set_student_age_group(request):
         return Response({"error": "Faltan campos"}, status=400)
 
     try:
-        student = CustomUser.objects.get(username=username, role="student")
+        student = CustomUser.objects.get(
+            username=username,
+            role="student",
+            is_archived=False
+        )
     except CustomUser.DoesNotExist:
         return Response({"error": "Estudiante no encontrado"}, status=404)
 
@@ -272,13 +287,13 @@ def update_lesson_progress(request):
 
 
 # ========================================================
-# 🟦 LEADERBOARD
+# 🟦 LEADERBOARD (ignora alumnos archivados)
 # ========================================================
 @api_view(["GET"])
 def get_leaderboard(request):
     leaderboard = []
 
-    for student in CustomUser.objects.filter(role="student"):
+    for student in CustomUser.objects.filter(role="student", is_archived=False):
         total_xp = sum(p.xp for p in LessonProgress.objects.filter(user=student))
         leaderboard.append({
             "username": student.username,
@@ -313,13 +328,18 @@ def get_me(request):
 @permission_classes([IsAuthenticated])
 def list_children(request):
     parent = request.user
-    children = CustomUser.objects.filter(linked_student=parent, role="student")
+    children = CustomUser.objects.filter(
+        linked_student=parent,
+        role="student",
+        is_archived=False
+    )
 
     return Response([
         {
             "id": c.id,
             "username": c.username,
             "age": c.age,
+            "age_group": c.age_group,
             "password": "",
             "password_changed_once": c.password_changed_once,
         }
@@ -365,7 +385,12 @@ def update_child(request):
     child_id = request.data.get("child_id")
 
     try:
-        child = CustomUser.objects.get(id=child_id, linked_student=request.user)
+        child = CustomUser.objects.get(
+            id=child_id,
+            linked_student=request.user,
+            role="student",
+            is_archived=False
+        )
     except CustomUser.DoesNotExist:
         return Response({"error": "Hijo no encontrado."}, status=404)
 
@@ -395,3 +420,63 @@ def update_child(request):
     child.save()
 
     return Response({"message": "Hijo actualizado correctamente."})
+
+
+# ========================================================
+# 🟥 PADRES — ARCHIVAR (soft delete) HIJO
+# ========================================================
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def archive_child(request):
+    child_id = request.data.get("child_id")
+
+    if not child_id:
+        return Response({"error": "child_id requerido."}, status=400)
+
+    try:
+        child = CustomUser.objects.get(
+            id=child_id,
+            linked_student=request.user,
+            role="student",
+            is_archived=False
+        )
+    except CustomUser.DoesNotExist:
+        return Response({"error": "Hijo no encontrado."}, status=404)
+
+    child.is_archived = True
+    child.save(update_fields=["is_archived"])
+
+    return Response({"message": "Alumno archivado correctamente."})
+
+
+# ========================================================
+# 🟥 PADRES — PROGRESO ESPECÍFICO DE UN HIJO
+#   (ignora archivados)
+# ========================================================
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_child_progress_for_parent(request, child_id):
+    parent = request.user
+    try:
+        child = CustomUser.objects.get(
+            id=child_id,
+            linked_student=parent,
+            role="student",
+            is_archived=False
+        )
+    except CustomUser.DoesNotExist:
+        return Response(
+            {"error": "Hijo no encontrado o no pertenece a este apoderado."},
+            status=404
+        )
+
+    progress_qs = LessonProgress.objects.filter(user=child)
+    progress_serializer = LessonProgressSerializer(progress_qs, many=True)
+
+    return Response({
+        "id": child.id,
+        "username": child.username,
+        "age_group": child.age_group,
+        "age": child.age,
+        "progress": progress_serializer.data,
+    })

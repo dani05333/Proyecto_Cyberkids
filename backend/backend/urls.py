@@ -13,8 +13,10 @@ from api.views import (
     list_children,
     create_child_api,
     update_child,
-    send_verification_code,   # ✅ verificación
-    verify_email,             # ✅ verificación
+    send_verification_code,    # verificación
+    verify_email,              # verificación
+    get_child_progress_for_parent,
+    archive_child,             # 👈 NUEVO IMPORTANTE
 )
 
 urlpatterns = [
@@ -60,4 +62,19 @@ urlpatterns = [
     path('api/parent/children/', list_children, name='list_children'),
     path('api/parent/create-child/', create_child_api, name='create_child'),
     path('api/parent/update-child/', update_child, name='update_child'),
+
+    path(
+        "api/parent/children/<int:child_id>/progress/",
+        get_child_progress_for_parent,
+        name="child_progress_for_parent"
+    ),
+
+    # ---------------------------
+    # 🗑️ ARCHIVAR ALUMNO (SOFT DELETE)
+    # ---------------------------
+    path(
+        "api/parent/archive-child/",
+        archive_child,
+        name="archive_child"
+    ),
 ]
