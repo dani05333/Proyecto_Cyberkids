@@ -57,6 +57,31 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
+'''
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'CYBERKIDS_DB',
+        'USER': 'root',
+        'PASSWORD': 'XZTmKrUEXDLyArhquSyKUppXiTsdWEdJ',
+        'HOST': 'yamabiko.proxy.rlwy.net',
+        'PORT': '22415',
+    }
+}
+'''
+
+#DATABASES = {
+#    'default': {
+#        'ENGINE': 'django.db.backends.mysql',
+#        'NAME': 'CyberKidsDB',
+#        'USER': 'root',
+#        'PASSWORD': 'zwiKmNEXAlISHutzohJjzRuTiUsplJyE',
+#        'HOST': 'turntable.proxy.rlwy.net',
+#        'PORT': '56789',
+#    }
+#}
+
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
