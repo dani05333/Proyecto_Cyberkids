@@ -1,5 +1,5 @@
 // ---------------------------------------------------- 
-// App.tsx (VERSIÓN CON ADMIN)
+// App.tsx (VERSIÓN CON ADMIN + DOCENTE)
 // ----------------------------------------------------
 import React, { useState, createContext, useEffect } from "react";
 import axios from "axios";
@@ -17,7 +17,8 @@ import Dashboard from "./components/Dashboard";
 import ParentHome from "./components/ParentHome";
 import SchoolDashboard from "./components/SchoolDashboard";
 import AgeSelectorPage from "./components/AgeSelectorPage";
-import AdminDashboard from "./components/AdminDashboard"; // 👈 NUEVO
+import AdminDashboard from "./components/AdminDashboard";
+import TeacherDashboard from "./components/TeacherDashboard"; // 👈 NUEVO
 
 import FeedbackButton from "./components/FeedbackButton";
 import PremiumModal from "./components/PremiumModal";
@@ -113,12 +114,12 @@ const App: React.FC = () => {
           setLoggedInAccount({
             name: me.username,
             email: me.email,
-            profileType: role,
+            profileType: role || "student",
           });
         }
 
         // -----------------------------
-        // Apoderado / Colegio / Admin
+        // Apoderado / Colegio / Docente / Admin
         // -----------------------------
         else {
           setUser({
@@ -144,7 +145,7 @@ const App: React.FC = () => {
           setLoggedInAccount({
             name: me.username,
             email: me.email,
-            profileType: role,
+            profileType: role || "student",
           });
         }
       } catch (err) {
@@ -158,24 +159,30 @@ const App: React.FC = () => {
   // ----------------------------------------------------
   // Cambiar vista al loguear según rol
   // ----------------------------------------------------
-  useEffect(() => {
-    if (!user) return;
+    useEffect(() => {
+  if (!user) return;
 
-    if (user.role === "student") {
-      if (!user.ageGroup) setView("age-selector");
-      else setView("dashboard");
-    } else if (user.role === "parent") {
-      setView("parent-home");
-    } else if (user.role === "school") {
-      setView("school-dashboard");
-    } else if (user.role === "admin") {
-      setView("admin-dashboard"); // 👈 NUEVA VISTA
-    }
-  }, [user, setView]);
+  if (user.role === "student") {
+    if (!user.ageGroup) setView("age-selector");
+    else setView("dashboard");
+  } else if (user.role === "parent") {
+    setView("parent-home");
+  } else if (user.role === "teacher") {
+    setView("teacher-dashboard");
+  } else if (user.role === "school") {
+    // si quieres, aquí puedes mandar también al teacher dashboard:
+    // setView("teacher-dashboard");
+    setView("school-dashboard");
+  } else if (user.role === "admin") {
+    setView("admin-dashboard");
+  }
+}, [user, setView]);
+
+
 
   // ----------------------------------------------------
   // CONTEXTO GLOBAL (incluye lastError)
-// ----------------------------------------------------
+  // ----------------------------------------------------
   const contextValue: AppContextType = {
     view,
     setView,
@@ -342,11 +349,16 @@ const App: React.FC = () => {
       case "school-dashboard":
         return <SchoolDashboard />;
 
+      case "teacher-dashboard":
+        return <TeacherDashboard />; // 👈 NUEVA VISTA DOCENTE
+
       case "admin-dashboard":
-        return <AdminDashboard />; // 👈 NUEVA VISTA
+        return <AdminDashboard />;
 
       case "age-selector":
-        return <AgeSelectorPage username={user?.name || ""} setView={setView} />;
+        return (
+          <AgeSelectorPage username={user?.name || ""} setView={setView} />
+        );
 
       default:
         return <Login setView={setView} />;

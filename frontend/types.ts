@@ -14,7 +14,8 @@ export enum ProfileType {
   STUDENT = "student",
   PARENT = "parent",
   SCHOOL = "school",
-  ADMIN = "admin", // 👈 NUEVO
+  TEACHER = "teacher", // 👈 NUEVO
+  ADMIN = "admin",
 }
 
 // --------------------------------------------------------
@@ -42,8 +43,8 @@ export interface User {
   username?: string;
   email?: string;
 
-  // 👇 ahora incluye admin
-  role?: "student" | "parent" | "school" | "admin";
+  // 👇 ahora incluye también teacher
+  role?: "student" | "parent" | "school" | "teacher" | "admin";
 
   linked_parent?: string | null;
 
@@ -71,8 +72,8 @@ export interface Account {
   name: string;
   email: string;
 
-  // 👇 ahora también puede ser admin
-  profileType: "parent" | "school" | "student" | "admin";
+  // 👇 ahora también puede ser teacher
+  profileType: "parent" | "school" | "student" | "teacher" | "admin";
 
   linkedStudentName?: string;
 }
@@ -147,7 +148,8 @@ export type ViewType =
   | "dashboard"
   | "parent-home"
   | "school-dashboard"
-  | "admin-dashboard"   // 👈 NUEVA VISTA ADMIN
+  | "admin-dashboard" // 👈 VISTA ADMIN
+  | "teacher-dashboard" // 👈 NUEVA VISTA DOCENTE
   | "register-student";
 
 // --------------------------------------------------------
@@ -206,7 +208,7 @@ export interface AppContextType {
 }
 
 // --------------------------------------------------------
-// Modelo School
+// Modelo School (colegio / vista SchoolDashboard)
 // --------------------------------------------------------
 export interface Classroom {
   id: string;
@@ -220,4 +222,24 @@ export interface Student {
   xp: number;
   classId: string;
   lastActivity: string;
+}
+
+// --------------------------------------------------------
+// 👨‍🏫 Modelos para Panel Docente
+// --------------------------------------------------------
+export interface TeacherCourse {
+  id: number;
+  name: string;
+  grade?: string | null;
+  students_count: number;
+}
+
+export interface TeacherStudentProgress {
+  id: number;
+  username: string;
+  age?: number | null;
+  age_group?: AgeGroup | null; // coincide con el backend (age_group)
+  total_xp: number;
+  average_score: number;
+  average_time: number;
 }

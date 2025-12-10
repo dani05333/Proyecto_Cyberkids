@@ -5,11 +5,43 @@ import { AppContextType, AgeGroup } from "../types";
 
 const API = "http://127.0.0.1:8000/api";
 
+/* -------------------------------------------------------------------------- */
+/*                  Diccionario: ID de lección → nombre amigable              */
+/* -------------------------------------------------------------------------- */
+
+const LESSON_LABELS: Record<string, string> = {
+  // ⚠️ CAMBIA ESTOS NOMBRES POR LOS REALES DE TU PROYECTO
+  "kid-l1-1": "Nivel 1 · Juego 1",
+  "kid-l1-2": "Nivel 1 · Juego 2",
+  "kid-l2-1": "Nivel 2 · Juego 1",
+  "kid-l2-2": "Nivel 2 · Juego 2",
+  "tween-l1-1": "Preadolescente · Juego 1",
+  "tween-l1-2": "Preadolescente · Juego 2",
+  "teen-l1-1": "Adolescente · Juego 1",
+};
+
+const getLessonLabel = (lessonId: string): string => {
+  return LESSON_LABELS[lessonId] || lessonId;
+};
+
+/* -------------------------------------------------------------------------- */
+/*                     Helper para encabezados de autenticación               */
+/* -------------------------------------------------------------------------- */
+
+const getAuthHeaders = () => {
+  const token = localStorage.getItem("accessToken");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+/* -------------------------------------------------------------------------- */
+/*                                  Tipos                                     */
+/* -------------------------------------------------------------------------- */
+
 interface AdminUser {
   id: number;
   username: string;
   email: string;
-  role: "student" | "parent" | "school" | "admin" | "teacher"; // por si el backend usa "teacher"
+  role: "student" | "parent" | "teacher" | "admin";
   age?: number | null;
   age_group?: AgeGroup | null;
   linked_student_username?: string | null;
@@ -20,32 +52,57 @@ interface AdminUser {
 
 type AdminSection = "users" | "stats" | "settings";
 
+interface LessonErrorItem {
+  lesson_id: string;
+  times_played: number;
+  average_score: number; // 0–1
+  average_time: number; // segundos
+  error_rate: number; // 0–100
+  total_xp: number;
+}
+
+interface AdminReportOverview {
+  total_students: number;
+  archived_students: number;
+  total_lessons_completed: number;
+  average_score: number; // 0–1
+  average_time: number; // segundos
+  per_lessons: LessonErrorItem[];
+  top_lessons_by_errors: LessonErrorItem[];
+  // también viene top_students, pero no lo usamos aquí
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Componente principal                          */
+/* -------------------------------------------------------------------------- */
+
 const AdminDashboard: React.FC = () => {
   const context = useContext(AppContext) as AppContextType;
   const { loggedInAccount, user, logout } = context;
 
   const displayName =
-    loggedInAccount?.name || user?.name || user?.username || "Administrador";
-  const displayEmail = loggedInAccount?.email || user?.email || "";
+    loggedInAccount?.name ||
+    (user as any)?.name ||
+    (user as any)?.username ||
+    "Administrador";
+  const displayEmail = loggedInAccount?.email || (user as any)?.email || "";
 
   const [activeSection, setActiveSection] = useState<AdminSection>("users");
 
+  // ----------- Usuarios / CRUD -----------
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // filtros
   const [roleFilter, setRoleFilter] = useState<
-    "all" | "student" | "parent" | "school" | "admin" | "teacher"
+    "all" | "student" | "parent" | "teacher" | "admin"
   >("all");
   const [searchTerm, setSearchTerm] = useState("");
 
-  // paginación
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
   const [total, setTotal] = useState(0);
 
-  // ---------- estado para CRUD ----------
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
@@ -56,7 +113,17 @@ const AdminDashboard: React.FC = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const [formLoading, setFormLoading] = useState(false);
 
-  // ----------------- Cargar usuarios -----------------
+  // ----------- Reportes / estadísticas -----------
+  const [reportOverview, setReportOverview] = useState<AdminReportOverview | null>(
+    null
+  );
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+
+  /* -------------------------------------------------------------------------- */
+  /*                           Cargar usuarios (CRUD)                           */
+  /* -------------------------------------------------------------------------- */
+
   const fetchUsers = async () => {
     setLoading(true);
     setLoadError(null);
@@ -66,9 +133,9 @@ const AdminDashboard: React.FC = () => {
         params: {
           page,
           page_size: pageSize,
-          // siempre pedimos TODOS (archivados y activos)
           only_active: "false",
         },
+        headers: getAuthHeaders(),
       });
 
       const { results, total: totalCount } = res.data;
@@ -91,7 +158,6 @@ const AdminDashboard: React.FC = () => {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  // ----------------- Filtro local por rol/busqueda -----------------
   const filteredUsers = users.filter((u) => {
     if (roleFilter !== "all" && u.role !== roleFilter) return false;
 
@@ -103,7 +169,6 @@ const AdminDashboard: React.FC = () => {
     );
   });
 
-  // ---------- helpers CRUD ----------
   const resetForm = () => {
     setFormUsername("");
     setFormPassword("");
@@ -122,7 +187,7 @@ const AdminDashboard: React.FC = () => {
     setFormMode("edit");
     setEditingUser(user);
     setFormUsername(user.username);
-    setFormPassword(""); // contraseña vacía: solo se cambia si se escribe
+    setFormPassword("");
     setFormRole(user.role);
     setFormError(null);
     setShowForm(true);
@@ -135,14 +200,18 @@ const AdminDashboard: React.FC = () => {
 
     try {
       if (formMode === "create") {
-        // CREATE: POST /api/admin/users/
-        await axios.post(`${API}/admin/users/`, {
-          username: formUsername,
-          password: formPassword,
-          role: formRole,
-        });
+        await axios.post(
+          `${API}/admin/users/`,
+          {
+            username: formUsername,
+            password: formPassword,
+            role: formRole,
+          },
+          {
+            headers: getAuthHeaders(),
+          }
+        );
       } else if (editingUser) {
-        // EDIT: PATCH /api/admin/users/<id>/
         const body: any = {
           username: formUsername,
           role: formRole,
@@ -151,10 +220,11 @@ const AdminDashboard: React.FC = () => {
           body.password = formPassword;
         }
 
-        await axios.patch(`${API}/admin/users/${editingUser.id}/`, body);
+        await axios.patch(`${API}/admin/users/${editingUser.id}/`, body, {
+          headers: getAuthHeaders(),
+        });
       }
 
-      // recargar lista
       await fetchUsers();
       setShowForm(false);
       resetForm();
@@ -172,9 +242,15 @@ const AdminDashboard: React.FC = () => {
 
   const toggleArchive = async (u: AdminUser) => {
     try {
-      await axios.patch(`${API}/admin/users/${u.id}/`, {
-        is_archived: !u.is_archived,
-      });
+      await axios.patch(
+        `${API}/admin/users/${u.id}/`,
+        {
+          is_archived: !u.is_archived,
+        },
+        {
+          headers: getAuthHeaders(),
+        }
+      );
       fetchUsers();
     } catch (err) {
       console.error("Error al archivar/activar usuario:", err);
@@ -182,7 +258,208 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  // ----------------- Render sección Usuarios -----------------
+  /* -------------------------------------------------------------------------- */
+  /*                      Reportes / estadísticas para admin                    */
+  /* -------------------------------------------------------------------------- */
+
+  const fetchReportOverview = async () => {
+    setReportLoading(true);
+    setReportError(null);
+
+    try {
+      const res = await axios.get<AdminReportOverview>(
+        `${API}/admin/report/overview/`,
+        {
+          headers: getAuthHeaders(),
+        }
+      );
+      setReportOverview(res.data);
+    } catch (err) {
+      console.error("Error cargando resumen de reportes:", err);
+      setReportError(
+        "No se pudieron cargar las estadísticas. Intenta nuevamente más tarde."
+      );
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSection === "stats" && !reportOverview && !reportLoading) {
+      fetchReportOverview();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection]);
+
+  /* -------------------------------------------------------------------------- */
+  /*             Exportar reporte desde el FRONT (sin endpoint)                */
+  /* -------------------------------------------------------------------------- */
+
+  /** Exporta el resumen y los juegos a un CSV que Excel puede abrir. */
+  const exportReportToCSV = () => {
+    if (!reportOverview) {
+      alert("Primero carga las estadísticas antes de exportar.");
+      return;
+    }
+
+    const activeStudents =
+      reportOverview.total_students - reportOverview.archived_students;
+
+    let lines: string[] = [];
+
+    // Resumen
+    lines.push("Sección;Campo;Valor");
+    lines.push(`Resumen;Alumnos activos;${activeStudents}`);
+    lines.push(`Resumen;Alumnos archivados;${reportOverview.archived_students}`);
+    lines.push(
+      `Resumen;Lecciones completadas;${reportOverview.total_lessons_completed}`
+    );
+    lines.push(
+      `Resumen;Puntaje promedio global;${(
+        reportOverview.average_score * 100
+      ).toFixed(1)}%`
+    );
+    lines.push(
+      `Resumen;Tiempo promedio global (s);${reportOverview.average_time.toFixed(
+        1
+      )}`
+    );
+
+    lines.push(""); // línea en blanco
+
+    // Juegos
+    lines.push(
+      "Juegos;Juego;Lesson ID;Veces jugado;Puntaje promedio;Tiempo promedio (s);% intentos con error;XP total"
+    );
+    reportOverview.per_lessons.forEach((l) => {
+      lines.push(
+        [
+          "Juego",
+          getLessonLabel(l.lesson_id),
+          l.lesson_id,
+          l.times_played,
+          (l.average_score * 100).toFixed(1) + "%",
+          l.average_time.toFixed(1),
+          l.error_rate.toFixed(1) + "%",
+          l.total_xp,
+        ].join(";")
+      );
+    });
+
+    const csvContent = lines.join("\n");
+
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "reporte_cyberkids.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  /**
+   * Genera una página imprimible con el resumen.
+   * El usuario puede elegir "Guardar como PDF" en el diálogo de impresión.
+   */
+  const exportReportToPDF = () => {
+    if (!reportOverview) {
+      alert("Primero carga las estadísticas antes de exportar.");
+      return;
+    }
+
+    const activeStudents =
+      reportOverview.total_students - reportOverview.archived_students;
+
+    const win = window.open("", "_blank");
+    if (!win) {
+      alert("No se pudo abrir la ventana de impresión.");
+      return;
+    }
+
+    const html = `
+      <html>
+        <head>
+          <title>Reporte CyberKids</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; }
+            h1 { font-size: 22px; margin-bottom: 10px; }
+            h2 { font-size: 16px; margin-top: 20px; margin-bottom: 8px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+            th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 12px; }
+            th { background: #f3f4f6; }
+          </style>
+        </head>
+        <body>
+          <h1>Reporte CyberKids - Resumen</h1>
+
+          <h2>Resumen general</h2>
+          <table>
+            <tr><th>Campo</th><th>Valor</th></tr>
+            <tr><td>Alumnos activos</td><td>${activeStudents}</td></tr>
+            <tr><td>Alumnos archivados</td><td>${
+              reportOverview.archived_students
+            }</td></tr>
+            <tr><td>Lecciones completadas</td><td>${
+              reportOverview.total_lessons_completed
+            }</td></tr>
+            <tr><td>Puntaje promedio global</td><td>${(
+              reportOverview.average_score * 100
+            ).toFixed(1)}%</td></tr>
+            <tr><td>Tiempo promedio global (s)</td><td>${reportOverview.average_time.toFixed(
+              1
+            )}</td></tr>
+          </table>
+
+          <h2>Juegos y tasa de error</h2>
+          <table>
+            <tr>
+              <th>Juego</th>
+              <th>Lesson ID</th>
+              <th>Veces jugado</th>
+              <th>Puntaje promedio</th>
+              <th>Tiempo promedio (s)</th>
+              <th>% intentos con error</th>
+              <th>XP total</th>
+            </tr>
+            ${reportOverview.per_lessons
+              .map(
+                (l) => `
+              <tr>
+                <td>${getLessonLabel(l.lesson_id)}</td>
+                <td>${l.lesson_id}</td>
+                <td>${l.times_played}</td>
+                <td>${(l.average_score * 100).toFixed(1)}%</td>
+                <td>${l.average_time.toFixed(1)}</td>
+                <td>${l.error_rate.toFixed(1)}%</td>
+                <td>${l.total_xp}</td>
+              </tr>
+            `
+              )
+              .join("")}
+          </table>
+
+          <p style="margin-top: 24px; font-size: 11px; color: #6b7280;">
+            Generado desde el panel de administración de CyberKids Chile.
+          </p>
+        </body>
+      </html>
+    `;
+
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    win.print();
+  };
+
+  /* -------------------------------------------------------------------------- */
+  /*                        Render sección: Usuarios (CRUD)                     */
+  /* -------------------------------------------------------------------------- */
+
   const renderUsersSection = () => {
     return (
       <div className="space-y-6">
@@ -212,7 +489,7 @@ const AdminDashboard: React.FC = () => {
                 <option value="all">Todos</option>
                 <option value="student">Estudiantes</option>
                 <option value="parent">Apoderados</option>
-                <option value="school">Colegios / Docentes</option>
+                <option value="teacher">Colegios / Docentes</option>
                 <option value="admin">Administradores</option>
               </select>
             </div>
@@ -279,7 +556,7 @@ const AdminDashboard: React.FC = () => {
                 >
                   <option value="student">Estudiante</option>
                   <option value="parent">Apoderado</option>
-                  <option value="school">Docente / Colegio</option>
+                  <option value="teacher">Docente / Colegio</option>
                   <option value="admin">Administrador</option>
                 </select>
               </div>
@@ -360,7 +637,6 @@ const AdminDashboard: React.FC = () => {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
                           Rol
                         </th>
-                        {/* Columna de correo eliminada */}
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
                           Grupo etario
                         </th>
@@ -404,7 +680,6 @@ const AdminDashboard: React.FC = () => {
                           <td className="px-4 py-3 align-top">
                             <RoleBadge role={u.role} />
                           </td>
-                          {/* Celda de correo eliminada */}
                           <td className="px-4 py-3 align-top">
                             <AgeGroupLabel ageGroup={u.age_group || null} />
                           </td>
@@ -493,23 +768,196 @@ const AdminDashboard: React.FC = () => {
     );
   };
 
-  // ----------------- Render principal -----------------
+  /* -------------------------------------------------------------------------- */
+  /*                        Render sección: Estadísticas                        */
+  /* -------------------------------------------------------------------------- */
+
+  const renderStatsSection = () => {
+    const activeStudents =
+      reportOverview && reportOverview.archived_students !== undefined
+        ? reportOverview.total_students - reportOverview.archived_students
+        : 0;
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800">
+              Estadísticas y reportes
+            </h2>
+            <p className="text-sm text-slate-600">
+              Revisa el avance general y descarga reportes para compartir con la
+              institución o apoderados.
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={exportReportToCSV}
+              className="inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-semibold bg-emerald-500 text-white hover:bg-emerald-600"
+            >
+              Descargar Excel (CSV)
+            </button>
+            <button
+              type="button"
+              onClick={exportReportToPDF}
+              className="inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-semibold bg-rose-500 text-white hover:bg-rose-600"
+            >
+              Descargar PDF
+            </button>
+          </div>
+        </div>
+
+        {reportLoading && (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
+            Cargando estadísticas...
+          </div>
+        )}
+
+        {reportError && !reportLoading && (
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm text-rose-700">
+            {reportError}
+          </div>
+        )}
+
+        {!reportLoading && !reportError && reportOverview && (
+          <>
+            {/* Tarjetas principales */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Estudiantes
+                </p>
+                <p className="mt-1 text-2xl font-bold text-slate-800">
+                  {reportOverview.total_students}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Activos:{" "}
+                  <span className="font-semibold text-emerald-600">
+                    {activeStudents}
+                  </span>{" "}
+                  · Archivados:{" "}
+                  <span className="font-semibold text-slate-500">
+                    {reportOverview.archived_students}
+                  </span>
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Usuarios totales
+                </p>
+                <p className="mt-1 text-2xl font-bold text-slate-800">
+                  {total}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Total de cuentas registradas en la plataforma.
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Progreso en lecciones
+                </p>
+                <p className="mt-1 text-2xl font-bold text-slate-800">
+                  {reportOverview.total_lessons_completed}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Puntaje promedio:{" "}
+                  <span className="font-semibold text-sky-600">
+                    {`${Math.round(reportOverview.average_score * 100)}%`}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {/* “Gráfico” simple de score promedio */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+              <p className="text-sm font-semibold text-slate-700 mb-3">
+                Puntaje promedio global
+              </p>
+              <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden">
+                <div
+                  className="h-4 rounded-full bg-sky-500 transition-all"
+                  style={{
+                    width: `${
+                      Math.max(
+                        5,
+                        Math.min(100, reportOverview.average_score * 100)
+                      )
+                    }%`,
+                  }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Representa el desempeño promedio de los estudiantes en los
+                juegos y actividades.
+              </p>
+            </div>
+
+            {/* Tabla / gráfico simple de juegos con más errores */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+              <p className="text-sm font-semibold text-slate-700 mb-3">
+                Juegos con más dificultades (bajo puntaje promedio)
+              </p>
+
+              {(!reportOverview.top_lessons_by_errors ||
+                reportOverview.top_lessons_by_errors.length === 0) && (
+                <p className="text-sm text-slate-500">
+                  Aún no hay suficiente información para este reporte.
+                </p>
+              )}
+
+              {reportOverview.top_lessons_by_errors &&
+                reportOverview.top_lessons_by_errors.length > 0 && (
+                  <div className="space-y-3">
+                    {reportOverview.top_lessons_by_errors.map((item) => {
+                      const errorRate = 1 - item.average_score; // 0–1
+                      const width = Math.max(
+                        10,
+                        Math.min(100, errorRate * 100)
+                      );
+                      return (
+                        <div key={item.lesson_id}>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="font-semibold text-slate-700">
+                              {getLessonLabel(item.lesson_id)}
+                            </span>
+                            <span className="text-slate-500">
+                              Puntaje:{" "}
+                              {Math.round(item.average_score * 100)}
+                              % · Intentos: {item.times_played}
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                            <div
+                              className="h-3 rounded-full bg-rose-400"
+                              style={{ width: `${width}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  /* -------------------------------------------------------------------------- */
+  /*                        Render principal: switch secciones                  */
+  /* -------------------------------------------------------------------------- */
+
   const renderContent = () => {
     switch (activeSection) {
       case "users":
         return renderUsersSection();
       case "stats":
-        return (
-          <div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">
-              Estadísticas (próximamente)
-            </h2>
-            <p className="text-slate-600">
-              Aquí podrás ver métricas de uso de la plataforma, ranking global,
-              instituciones, etc.
-            </p>
-          </div>
-        );
+        return renderStatsSection();
       case "settings":
         return (
           <div>
@@ -526,6 +974,10 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  /* -------------------------------------------------------------------------- */
+  /*                            Layout general                                  */
+  /* -------------------------------------------------------------------------- */
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col">
       {/* NAVBAR SUPERIOR */}
@@ -535,7 +987,7 @@ const AdminDashboard: React.FC = () => {
             <div className="w-10 h-10 rounded-2xl bg-sky-500 flex items-center justify-center text-2xl">
               🛡️
             </div>
-          <div>
+            <div>
               <h1 className="text-lg md:text-xl font-extrabold text-slate-800">
                 Panel del Administrador
               </h1>
@@ -581,7 +1033,6 @@ const AdminDashboard: React.FC = () => {
             icon="📊"
             active={activeSection === "stats"}
             onClick={() => setActiveSection("stats")}
-            disabled
           />
           <SidebarButton
             label="Configuración"
@@ -610,7 +1061,10 @@ const AdminDashboard: React.FC = () => {
   );
 };
 
-// Sidebar button
+/* -------------------------------------------------------------------------- */
+/*                             Componentes auxiliares                          */
+/* -------------------------------------------------------------------------- */
+
 interface SidebarButtonProps {
   label: string;
   icon?: string;
@@ -651,7 +1105,6 @@ const SidebarButton: React.FC<SidebarButtonProps> = ({
   );
 };
 
-// Badges helpers
 const RoleBadge: React.FC<{ role: AdminUser["role"] }> = ({ role }) => {
   let label = "";
   let classes = "";
@@ -665,7 +1118,6 @@ const RoleBadge: React.FC<{ role: AdminUser["role"] }> = ({ role }) => {
       label = "Apoderado";
       classes = "bg-emerald-50 text-emerald-700 border-emerald-200";
       break;
-    case "school":
     case "teacher":
       label = "Docente / Colegio";
       classes = "bg-amber-50 text-amber-700 border-amber-200";

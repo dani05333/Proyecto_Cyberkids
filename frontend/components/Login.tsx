@@ -6,13 +6,12 @@ import VerifyEmail from "./VerifyEmail";
 
 const Login: React.FC<{
   setView: (view: AppContextType["view"]) => void;
-  initialTab?: "student" | "parent" | "school" | "admin";
+  initialTab?: "student" | "parent" | "teacher" | "admin";
 }> = ({ setView, initialTab = "student" }) => {
   const [activeTab, setActiveTab] = useState<
-    "student" | "parent" | "school" | "admin"
+    "student" | "parent" | "teacher" | "admin"
   >(initialTab);
 
-  // pantalla de verificación
   const [needsVerify, setNeedsVerify] = useState(false);
   const [emailToVerify, setEmailToVerify] = useState("");
 
@@ -43,10 +42,7 @@ const Login: React.FC<{
       <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl p-8">
         {/* TABS */}
         <div className="mb-6 border-b border-slate-200">
-          <nav
-            className="-mb-px flex justify-center space-x-4"
-            aria-label="Tabs"
-          >
+          <nav className="-mb-px flex justify-center space-x-4">
             <Tab
               label="Soy Estudiante"
               active={activeTab === "student"}
@@ -58,9 +54,9 @@ const Login: React.FC<{
               onClick={() => setActiveTab("parent")}
             />
             <Tab
-              label="Soy del Colegio"
-              active={activeTab === "school"}
-              onClick={() => setActiveTab("school")}
+              label="Soy Docente"
+              active={activeTab === "teacher"}
+              onClick={() => setActiveTab("teacher")}
             />
             <Tab
               label="Soy Administrador"
@@ -75,7 +71,7 @@ const Login: React.FC<{
           {activeTab === "student" && <StudentLogin setView={setView} />}
 
           {(activeTab === "parent" ||
-            activeTab === "school" ||
+            activeTab === "teacher" ||
             activeTab === "admin") && (
             <AdultLoginForm
               profileType={activeTab}
@@ -110,23 +106,22 @@ const Tab: React.FC<{
 );
 
 // -----------------------------------------------------------------
-// 🔹 FORMULARIO ADULTOS (apoderado, colegio, admin)
+// 🔹 FORMULARIO ADULTOS (apoderado, docente, admin)
 // -----------------------------------------------------------------
 const AdultLoginForm: React.FC<{
-  profileType: "parent" | "school" | "admin";
+  profileType: "parent" | "teacher" | "admin";
   setNeedsVerify: (v: boolean) => void;
   setEmailToVerify: (v: string) => void;
 }> = ({ profileType, setNeedsVerify, setEmailToVerify }) => {
   const context = useContext(AppContext) as AppContextType;
 
-  // si es admin → NO puede registrarse
   const isAdmin = profileType === "admin";
 
   const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [age, setAge] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState(""); // 👈 fecha de nacimiento
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
@@ -139,16 +134,33 @@ const AdultLoginForm: React.FC<{
     return hasMinLength && hasUpper && hasLower && hasNumber && hasSymbol;
   };
 
+  const calcAge = (dobStr: string): number => {
+    const dob = new Date(dobStr);
+    const today = new Date();
+
+    let age = today.getFullYear() - dob.getFullYear();
+    const m = today.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    // REGISTRO (solo parent y school)
+    // REGISTRO (solo parent y teacher, NO admin)
     if (isRegistering && !isAdmin) {
-      const parsedAge = parseInt(age);
+      if (!dateOfBirth) {
+        setError("Debes ingresar tu fecha de nacimiento.");
+        return;
+      }
 
-      if (isNaN(parsedAge) || parsedAge < 18) {
-        setError("Debes ingresar una edad válida (mayor de 18 años).");
+      const ageNumber = calcAge(dateOfBirth);
+
+      if (isNaN(ageNumber) || ageNumber < 18) {
+        setError("Debes ser mayor de 18 años.");
         return;
       }
 
@@ -159,9 +171,10 @@ const AdultLoginForm: React.FC<{
         return;
       }
 
+      // 👇 Aquí seguimos usando el registro original: el backend recibe AGE numérico
       const registered = await context.register(
         username,
-        parsedAge,
+        ageNumber,
         email,
         password,
         profileType
@@ -221,12 +234,13 @@ const AdultLoginForm: React.FC<{
             required
           />
 
+          {/* Nuevo: fecha de nacimiento */}
           <AuthInput
-            id="age"
-            type="number"
-            label="Edad"
-            value={age}
-            onChange={setAge}
+            id="dateOfBirth"
+            type="date"
+            label="Fecha de nacimiento"
+            value={dateOfBirth}
+            onChange={setDateOfBirth}
             required
           />
         </>
